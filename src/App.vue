@@ -14,6 +14,9 @@ import Stats from 'three/examples/jsm/libs/stats.module'
 import { GUI } from 'three/examples/jsm/libs/dat.gui.module'
 
 export default {
+	data: () => ({
+		gui: null
+	}),
 	mounted() {
 		const scene = new THREE.Scene()
 		// scene.add(new THREE.AxesHelper(5))
@@ -33,23 +36,27 @@ export default {
 
 		const camera = new THREE.PerspectiveCamera(
 			75,
-			window.innerWidth / window.innerHeight,
+			1,
 			0.01,
 			1000
-		)
-		camera.position.set(0, 1, 2)
+		);
+		camera.position.set(-0.09, 0.82, 0.61);
+		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
 		const renderer = new THREE.WebGLRenderer({
 			alpha: true
-		})
-		renderer.setSize(window.innerWidth, window.innerHeight)
+		});
+
+		let size = Math.min(window.innerWidth, window.innerHeight);
+		renderer.setSize(size, size);
 		renderer.gammaOutput = true;
 
 		this.$el.appendChild(renderer.domElement)
 
+		// Gives mouse movement/rotation/zoom handlers
 		const controls = new OrbitControls(camera, renderer.domElement)
 		controls.enableDamping = true
-		controls.target.set(0, 1, 0)
+		controls.target.set(0, 0, 0)
 
 		const manager = new LoadingManager();
 		manager.addHandler( /\.tga$/i, new TGALoader() );
@@ -64,8 +71,9 @@ export default {
 		fbxLoader.load(
 			'models/ToonRTS_demo_Knight/model.fbx',
 			(object) => {
-				object.scale.set(0.01, 0.01, 0.01)
-				mixer = new THREE.AnimationMixer(object)
+				object.scale.set(0.01, 0.01, 0.01);
+				object.position.set(0, 0, 0);
+				mixer = new THREE.AnimationMixer(object);
 
 				// Model doesn't have any
 				/*const animationAction = mixer.clipAction(
@@ -76,6 +84,11 @@ export default {
 				activeAction = animationActions[0]*/
 
 				scene.add(object)
+				let modelFolder = gui.addFolder('Model');
+				modelFolder.add(object.position, 'x', -4, 4).step(0.1).listen();
+				modelFolder.add(object.position, 'y', -4, 4).step(0.1).listen();
+				modelFolder.add(object.position, 'z', -4, 4).step(0.1).listen();
+
 				console.log('done with initial model');
 
 				//add an animation from another file
@@ -118,6 +131,7 @@ export default {
 											'models/ToonRTS_demo_Knight/model@attack.fbx',
 											(object) => {
 												console.log('loaded attack');
+				console.warn('rotation: ', camera.rotation);
 												//console.dir((object as THREE.Object3D).animations[0])
 												const animationAction = mixer.clipAction(
 													object.animations[0]
@@ -174,9 +188,10 @@ export default {
 
 		window.addEventListener('resize', onWindowResize, false)
 		function onWindowResize() {
-			camera.aspect = window.innerWidth / window.innerHeight
-			camera.updateProjectionMatrix()
-			renderer.setSize(window.innerWidth, window.innerHeight)
+			camera.updateProjectionMatrix();
+
+			let newSize = Math.min(window.innerWidth, window.innerHeight);
+			renderer.setSize(newSize);
 			render()
 		}
 
@@ -210,9 +225,22 @@ export default {
 			}
 		}
 
-		const gui = new GUI()
-		const animationsFolder = gui.addFolder('Animations')
-		animationsFolder.open()
+		const gui = this.gui = new GUI();
+		const animationsFolder = gui.addFolder('Animations');
+
+		const cameraFolder = gui.addFolder('Camera');
+		cameraFolder.add(camera.position, 'x', -4, 4).name('Position x').step(0.01).listen();
+		cameraFolder.add(camera.position, 'y', -4, 4).name('Position y').step(0.01).listen();
+		cameraFolder.add(camera.position, 'z', -4, 4).name('Position z').step(0.01).listen();
+		cameraFolder.add(camera, 'fov', -100,100).step(1).listen();
+		cameraFolder.add(camera, 'near', -100,100).step(1).listen();
+		cameraFolder.add(camera, 'far', -100,100).step(1).listen();
+		cameraFolder.add(camera, 'aspect', -100,100).step(1).listen();
+		cameraFolder.add(camera, 'zoom', -100,100).step(0.1).listen();
+		cameraFolder.add(camera.rotation, 'x', -4, 4).name('Rotation x').step(0.01).listen();
+		cameraFolder.add(camera.rotation, 'y', -4, 4).name('Rotation y').step(0.01).listen();
+		cameraFolder.add(camera.rotation, 'z', -4, 4).name('Rotation z').step(0.01).listen();
+		cameraFolder.open();
 
 
 		const clock = new THREE.Clock()
@@ -220,7 +248,7 @@ export default {
 		function animate() {
 			requestAnimationFrame(animate)
 
-			controls.update()
+			controls.update();
 
 			if (modelReady) mixer.update(clock.getDelta())
 
@@ -234,12 +262,26 @@ export default {
 		}
 
 		animate();
+	},
+	destroyed() {
+		this.gui.destroy();
 	}
 };
 </script>
 
 <style>
-body {
+html, body, #app {
 	margin: 0;
+	padding: 0;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+}
+
+body {
+	background: black;
+}
+#app > canvas {
+	background: white;
 }
 </style>
