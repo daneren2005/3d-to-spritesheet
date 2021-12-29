@@ -12,11 +12,51 @@ import { LoadingManager } from 'three/src/loaders/LoadingManager';
 import { TGALoader } from 'three/examples/jsm/loaders/TGALoader';
 import Stats from 'three/examples/jsm/libs/stats.module';
 import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
+import JSZip from 'jszip';
 
 export default {
 	data: () => ({
-		gui: null
+		renderer: null,
+		gui: null,
+		activeAction: null
 	}),
+	methods: {
+		setAction(toAction) {
+			if(toAction != this.activeAction) {
+				let lastAction = this.activeAction;
+				this.activeAction = toAction;
+				lastAction.stop();
+				// For taking screenshots we want an instant transition to start recording
+				/*lastAction.fadeOut(1);
+				this.activeAction.reset();
+				this.activeAction.fadeIn(1);*/
+				this.activeAction.play();
+			}
+		},
+		async recordAnimation(action) {
+			this.setAction(action);
+
+			let zip = new JSZip();
+			// TODO: figure out how many RAF's to run based on the duration of the animation
+			// let duration = action._clip.duration;
+
+			await raf();
+			for(let i = 0; i < 6; i++) {
+				zip.file(`frame ${i}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
+
+				await raf();
+				await raf();
+				await raf();
+			}
+
+			zip.generateAsync({type: 'base64'}).then((content) => {
+				window.location = 'data:application/zip;base64,' + content;
+			});
+		},
+		getPNGDataUrl() {
+			return this.renderer.domElement.toDataURL('image/png');
+		}
+	},
 	mounted() {
 		const scene = new THREE.Scene();
 		// scene.add(new THREE.AxesHelper(5))
@@ -43,7 +83,7 @@ export default {
 		camera.position.set(0, 1.05, 0.32);
 		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
-		const renderer = new THREE.WebGLRenderer({
+		const renderer = this.renderer = new THREE.WebGLRenderer({
 			// So we can save canvas to a PNG
 			preserveDrawingBuffer: true,
 			alpha: true
@@ -66,8 +106,6 @@ export default {
 		let mixer;
 		let modelReady = false;
 		const animationActions = [];
-		let activeAction;
-		let lastAction;
 		const fbxLoader = new FBXLoader(manager);
 
 		fbxLoader.load(
@@ -100,6 +138,7 @@ export default {
 						);
 						animationActions.push(animationAction);
 						animationsFolder.add(animations, 'idle');
+						actionsFolder.add(recordAnimations, 'idle');
 
 						//add an animation from another file
 						fbxLoader.load(
@@ -110,7 +149,8 @@ export default {
 								);
 								animationActions.push(animationAction);
 								animationsFolder.add(animations, 'walk');
-								activeAction = animationAction;
+								actionsFolder.add(recordAnimations, 'walk');
+								this.activeAction = animationAction;
 
 								//add an animation from another file
 								fbxLoader.load(
@@ -122,6 +162,7 @@ export default {
 										);
 										animationActions.push(animationAction);
 										animationsFolder.add(animations, 'run');
+										actionsFolder.add(recordAnimations, 'run');
 
 										fbxLoader.load(
 											'models/ToonRTS_demo_Knight/model@attack.fbx',
@@ -130,12 +171,12 @@ export default {
 												const animationAction = mixer.clipAction(
 													object.animations[0]
 												);
-												console.log('animation: ', animationAction);
 												animationActions.push(animationAction);
 												animationsFolder.add(animations, 'attack');
+												actionsFolder.add(recordAnimations, 'attack');
 
 												modelReady = true;
-												setAction(animationActions[0]);
+												this.setAction(animationActions[0]);
 											},
 											(xhr) => {
 												
@@ -190,34 +231,37 @@ export default {
 		this.$el.appendChild(stats.dom);
 
 		const animations = {
-			idle: function () {
-				setAction(animationActions[0]);
+			idle: () => {
+				this.setAction(animationActions[0]);
 			},
-			walk: function () {
-				setAction(animationActions[1]);
+			walk: () => {
+				this.setAction(animationActions[1]);
 			},
-			run: function () {
-				setAction(animationActions[2]);
+			run: () => {
+				this.setAction(animationActions[2]);
 			},
-			attack: function () {
-				setAction(animationActions[3]);
+			attack: () => {
+				this.setAction(animationActions[3]);
 			}
 		};
-
-		const setAction = (toAction) => {
-			if (toAction != activeAction) {
-				lastAction = activeAction;
-				activeAction = toAction;
-				//lastAction.stop()
-				lastAction.fadeOut(1);
-				activeAction.reset();
-				activeAction.fadeIn(1);
-				activeAction.play();
+		const recordAnimations = {
+			idle: () => {
+				this.recordAnimation(animationActions[0]);
+			},
+			walk: () => {
+				this.recordAnimation(animationActions[1]);
+			},
+			run: () => {
+				this.recordAnimation(animationActions[2]);
+			},
+			attack: () => {
+				this.recordAnimation(animationActions[3]);
 			}
 		};
 
 		const gui = this.gui = new GUI();
 		const animationsFolder = gui.addFolder('Animations');
+		animationsFolder.open();
 
 		const cameraFolder = gui.addFolder('Camera');
 		cameraFolder.add(camera.position, 'x', -4, 4).name('Position x').step(0.01).listen();
@@ -231,13 +275,13 @@ export default {
 		cameraFolder.add(camera.rotation, 'x', -4, 4).name('Rotation x').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'y', -4, 4).name('Rotation y').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'z', -4, 4).name('Rotation z').step(0.01).listen();
-		cameraFolder.open();
+		// cameraFolder.open();
 
 		const actionsFolder = gui.addFolder('Actions');
 		actionsFolder.add({
 			'Save to PNG': () => {
 				let a = document.createElement('a');
-				let imgData = renderer.domElement.toDataURL();
+				let imgData = this.getPNGDataUrl();
 				a.href = imgData.replace('image/png', 'image/octet-stream');
 				a.download = 'canvas.png';
 				a.click();
@@ -269,6 +313,14 @@ export default {
 		this.gui.destroy();
 	}
 };
+
+function raf() {
+	return new Promise((resolve) => {
+		requestAnimationFrame(() => {
+			resolve();
+		});
+	});
+}
 </script>
 
 <style>
