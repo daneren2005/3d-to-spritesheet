@@ -13,12 +13,17 @@ import { TGALoader } from 'three/examples/jsm/loaders/TGALoader';
 import Stats from 'three/examples/jsm/libs/stats.module';
 import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
 import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 
 export default {
 	data: () => ({
 		renderer: null,
 		gui: null,
-		activeAction: null
+		activeAction: null,
+		recordParams: {
+			Frames: 6
+		},
+		frameSize: 256
 	}),
 	methods: {
 		setAction(toAction) {
@@ -33,28 +38,36 @@ export default {
 				this.activeAction.play();
 			}
 		},
-		async recordAnimation(action) {
+		async recordAnimation(action, name = 'test') {
 			this.setAction(action);
 
 			let zip = new JSZip();
-			// TODO: figure out how many RAF's to run based on the duration of the animation
-			// let duration = action._clip.duration;
+			let duration = action._clip.duration;
+			const FRAMES = this.recordParams.Frames;
+			let skipTime = Math.floor(duration / FRAMES / 16.6 * 1000);
 
 			await raf();
-			for(let i = 0; i < 6; i++) {
-				zip.file(`frame ${i}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
+			for(let i = 0; i < FRAMES; i++) {
+				zip.file(`frame ${i + 1}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
 
-				await raf();
-				await raf();
-				await raf();
+				for(let j = 0; j < skipTime; j++) {
+					await raf();
+				}
 			}
 
-			zip.generateAsync({type: 'base64'}).then((content) => {
-				window.location = 'data:application/zip;base64,' + content;
+			zip.generateAsync({type: 'blob'}).then((content) => {
+				saveAs(content, `${name}.zip`);
 			});
 		},
 		getPNGDataUrl() {
 			return this.renderer.domElement.toDataURL('image/png');
+		},
+
+		onWindowResize() {
+			let size = Math.min(window.innerWidth, window.innerHeight);
+			let scale = Math.floor(size / this.frameSize);
+
+			this.renderer.domElement.style.transform = `scale(${scale})`;
 		}
 	},
 	mounted() {
@@ -89,8 +102,7 @@ export default {
 			alpha: true
 		});
 
-		let size = Math.min(window.innerWidth, window.innerHeight);
-		renderer.setSize(size, size);
+		renderer.setSize(this.frameSize, this.frameSize);
 		renderer.gammaOutput = true;
 
 		this.$el.appendChild(renderer.domElement);
@@ -218,17 +230,11 @@ export default {
 			}
 		);
 
-		window.addEventListener('resize', onWindowResize, false);
-		function onWindowResize() {
-			camera.updateProjectionMatrix();
-
-			/*let newSize = Math.min(window.innerWidth, window.innerHeight);
-			renderer.setSize(newSize);*/
-			render();
-		}
+		window.addEventListener('resize', this.onWindowResize, false);
+		this.onWindowResize();
 
 		const stats = Stats();
-		this.$el.appendChild(stats.dom);
+		// this.$el.appendChild(stats.dom);
 
 		const animations = {
 			idle: () => {
@@ -246,16 +252,16 @@ export default {
 		};
 		const recordAnimations = {
 			idle: () => {
-				this.recordAnimation(animationActions[0]);
+				this.recordAnimation(animationActions[0], 'Idle');
 			},
 			walk: () => {
-				this.recordAnimation(animationActions[1]);
+				this.recordAnimation(animationActions[1], 'Walk');
 			},
 			run: () => {
-				this.recordAnimation(animationActions[2]);
+				this.recordAnimation(animationActions[2], 'Run');
 			},
 			attack: () => {
-				this.recordAnimation(animationActions[3]);
+				this.recordAnimation(animationActions[3], 'Attack');
 			}
 		};
 
@@ -287,6 +293,7 @@ export default {
 				a.click();
 			}
 		}, 'Save to PNG');
+		actionsFolder.add(this.recordParams, 'Frames', 0, 20).step(1).listen();
 
 
 		const clock = new THREE.Clock();
@@ -337,5 +344,7 @@ body {
 }
 #app > canvas {
 	background: white;
+
+	transform-origin: top left;
 }
 </style>
