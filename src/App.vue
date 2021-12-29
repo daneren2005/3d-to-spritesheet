@@ -5,20 +5,20 @@
 </template>
 
 <script>
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls'
-import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader'
-import { LoadingManager } from 'three/src/loaders/LoadingManager'
-import { TGALoader } from 'three/examples/jsm/loaders/TGALoader'
-import Stats from 'three/examples/jsm/libs/stats.module'
-import { GUI } from 'three/examples/jsm/libs/dat.gui.module'
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader';
+import { LoadingManager } from 'three/src/loaders/LoadingManager';
+import { TGALoader } from 'three/examples/jsm/loaders/TGALoader';
+import Stats from 'three/examples/jsm/libs/stats.module';
+import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
 
 export default {
 	data: () => ({
 		gui: null
 	}),
 	mounted() {
-		const scene = new THREE.Scene()
+		const scene = new THREE.Scene();
 		// scene.add(new THREE.AxesHelper(5))
 
 		const light1  = new THREE.AmbientLight(0xFFFFFF, 0.3);
@@ -53,22 +53,22 @@ export default {
 		renderer.setSize(size, size);
 		renderer.gammaOutput = true;
 
-		this.$el.appendChild(renderer.domElement)
+		this.$el.appendChild(renderer.domElement);
 
 		// Gives mouse movement/rotation/zoom handlers
-		const controls = new OrbitControls(camera, renderer.domElement)
-		controls.enableDamping = true
-		controls.target.set(0, 0, 0)
+		const controls = new OrbitControls(camera, renderer.domElement);
+		controls.enableDamping = true;
+		controls.target.set(0, 0, 0);
 
 		const manager = new LoadingManager();
 		manager.addHandler( /\.tga$/i, new TGALoader() );
 
-		let mixer
-		let modelReady = false
-		const animationActions = []
-		let activeAction
-		let lastAction
-		const fbxLoader = new FBXLoader(manager)
+		let mixer;
+		let modelReady = false;
+		const animationActions = [];
+		let activeAction;
+		let lastAction;
+		const fbxLoader = new FBXLoader(manager);
 
 		fbxLoader.load(
 			'models/ToonRTS_demo_Knight/model.fbx',
@@ -85,109 +85,99 @@ export default {
 				animationsFolder.add(animations, 'default')
 				activeAction = animationActions[0]*/
 
-				scene.add(object)
+				scene.add(object);
 				let modelFolder = gui.addFolder('Model');
 				modelFolder.add(object.position, 'x', -4, 4).step(0.1).listen();
 				modelFolder.add(object.position, 'y', -4, 4).step(0.1).listen();
 				modelFolder.add(object.position, 'z', -4, 4).step(0.1).listen();
 
-				console.log('done with initial model');
-
 				//add an animation from another file
 				fbxLoader.load(
 					'models/ToonRTS_demo_Knight/model@idle.fbx',
 					(object) => {
-						console.log('loaded idle')
-
 						const animationAction = mixer.clipAction(
 							object.animations[0]
-						)
-						animationActions.push(animationAction)
-						animationsFolder.add(animations, 'idle')
+						);
+						animationActions.push(animationAction);
+						animationsFolder.add(animations, 'idle');
 
 						//add an animation from another file
 						fbxLoader.load(
 							'models/ToonRTS_demo_Knight/model@walk.fbx',
 							(object) => {
-								console.log('loaded walk')
 								const animationAction = mixer.clipAction(
 									object.animations[0]
-								)
-								animationActions.push(animationAction)
-								animationsFolder.add(animations, 'walk')
+								);
+								animationActions.push(animationAction);
+								animationsFolder.add(animations, 'walk');
 								activeAction = animationAction;
 
 								//add an animation from another file
 								fbxLoader.load(
 									'models/ToonRTS_demo_Knight/model@run.fbx',
 									(object) => {
-										console.log('loaded run');
 										//console.dir((object as THREE.Object3D).animations[0])
 										const animationAction = mixer.clipAction(
 											object.animations[0]
-										)
-										animationActions.push(animationAction)
-										animationsFolder.add(animations, 'run')
+										);
+										animationActions.push(animationAction);
+										animationsFolder.add(animations, 'run');
 
 										fbxLoader.load(
 											'models/ToonRTS_demo_Knight/model@attack.fbx',
 											(object) => {
-												console.log('loaded attack');
 												//console.dir((object as THREE.Object3D).animations[0])
 												const animationAction = mixer.clipAction(
 													object.animations[0]
-												)
-												animationActions.push(animationAction)
-												animationsFolder.add(animations, 'attack')
+												);
+												console.log('animation: ', animationAction);
+												animationActions.push(animationAction);
+												animationsFolder.add(animations, 'attack');
 
-												modelReady = true
-												setAction(animationActions[0])
+												modelReady = true;
+												setAction(animationActions[0]);
 											},
 											(xhr) => {
-												console.log(
-													(xhr.loaded / xhr.total) * 100 + '% loaded'
-												)
+												
 											},
 											(error) => {
-												console.log(error)
+												console.error(error);
 											}
-										)
+										);
 									},
 									(xhr) => {
-										console.log(
-											(xhr.loaded / xhr.total) * 100 + '% loaded'
-										)
+										
 									},
 									(error) => {
-										console.log(error)
+										console.error(error);
 									}
-								)
+								);
 							},
 							(xhr) => {
-								console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+								
 							},
 							(error) => {
-								console.log(error)
+								console.error(error);
 							}
-						)
+						);
 					},
 					(xhr) => {
-						console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+						
 					},
 					(error) => {
-						console.log(error)
+						console.error(error);
 					}
-				)
+				);
 			},
 			(xhr) => {
-				console.log((xhr.loaded / xhr.total) * 100 + '% loaded')
+				
 			},
 			(error) => {
-				console.log(error)
+				console.error(error);
 			}
-		)
+		);
 
-		window.addEventListener('resize', onWindowResize, false)
+		window.addEventListener('resize', onWindowResize, false);
 		function onWindowResize() {
 			camera.updateProjectionMatrix();
 
@@ -196,35 +186,35 @@ export default {
 			render();
 		}
 
-		const stats = Stats()
-		this.$el.appendChild(stats.dom)
+		const stats = Stats();
+		this.$el.appendChild(stats.dom);
 
 		const animations = {
 			idle: function () {
-				setAction(animationActions[0])
+				setAction(animationActions[0]);
 			},
 			walk: function () {
-				setAction(animationActions[1])
+				setAction(animationActions[1]);
 			},
 			run: function () {
-				setAction(animationActions[2])
+				setAction(animationActions[2]);
 			},
 			attack: function () {
-				setAction(animationActions[3])
+				setAction(animationActions[3]);
 			}
-		}
+		};
 
 		const setAction = (toAction) => {
 			if (toAction != activeAction) {
-				lastAction = activeAction
-				activeAction = toAction
+				lastAction = activeAction;
+				activeAction = toAction;
 				//lastAction.stop()
-				lastAction.fadeOut(1)
-				activeAction.reset()
-				activeAction.fadeIn(1)
-				activeAction.play()
+				lastAction.fadeOut(1);
+				activeAction.reset();
+				activeAction.fadeIn(1);
+				activeAction.play();
 			}
-		}
+		};
 
 		const gui = this.gui = new GUI();
 		const animationsFolder = gui.addFolder('Animations');
@@ -249,28 +239,28 @@ export default {
 				let a = document.createElement('a');
 				let imgData = renderer.domElement.toDataURL();
 				a.href = imgData.replace('image/png', 'image/octet-stream');
-				a.download = 'canvas.png'
+				a.download = 'canvas.png';
 				a.click();
 			}
 		}, 'Save to PNG');
 
 
-		const clock = new THREE.Clock()
+		const clock = new THREE.Clock();
 
 		function animate() {
-			requestAnimationFrame(animate)
+			requestAnimationFrame(animate);
 
 			controls.update();
 
-			if (modelReady) mixer.update(clock.getDelta())
+			if (modelReady) mixer.update(clock.getDelta());
 
-			render()
+			render();
 
-			stats.update()
+			stats.update();
 		}
 
 		function render() {
-			renderer.render(scene, camera)
+			renderer.render(scene, camera);
 		}
 
 		animate();
