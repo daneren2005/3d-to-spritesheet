@@ -18,12 +18,19 @@ import { saveAs } from 'file-saver';
 export default {
 	data: () => ({
 		renderer: null,
+		camera: null,
 		gui: null,
 		activeAction: null,
 		recordParams: {
 			Frames: 6
 		},
-		frameSize: 256
+		frameSize: 256,
+		angles: {
+			Down: [0, 1.05, 0.32],
+			Right: [-0.32, 1.05, 0],
+			Up: [0, 1.05, -0.32],
+			Left: [0.32, 1.05, 0]
+		}
 	}),
 	methods: {
 		setAction(toAction) {
@@ -68,6 +75,11 @@ export default {
 			let scale = Math.floor(size / this.frameSize);
 
 			this.renderer.domElement.style.transform = `scale(${scale})`;
+		},
+
+		updateAngle(angleName) {
+			let angles = this.angles[angleName];
+			this.camera.position.set(...angles);
 		}
 	},
 	mounted() {
@@ -87,13 +99,13 @@ export default {
 		hemiLight.name = 'hemi_light';
 		scene.add(hemiLight);
 
-		const camera = new THREE.PerspectiveCamera(
+		const camera = this.camera = new THREE.PerspectiveCamera(
 			75,
 			1,
 			0.01,
 			1000
 		);
-		camera.position.set(0, 1.05, 0.32);
+		camera.position.set(...this.angles.Down);
 		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
 		const renderer = this.renderer = new THREE.WebGLRenderer({
@@ -110,6 +122,7 @@ export default {
 		// Gives mouse movement/rotation/zoom handlers
 		const controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
+		// controls.autoRotate = true;
 		controls.target.set(0, 0, 0);
 
 		const manager = new LoadingManager();
@@ -124,7 +137,6 @@ export default {
 			'models/ToonRTS_demo_Knight/model.fbx',
 			(object) => {
 				object.scale.set(0.01, 0.01, 0.01);
-				object.position.set(0, 0, 0);
 				mixer = new THREE.AnimationMixer(object);
 
 				// Model doesn't have any
@@ -282,6 +294,15 @@ export default {
 		cameraFolder.add(camera.rotation, 'y', -4, 4).name('Rotation y').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'z', -4, 4).name('Rotation z').step(0.01).listen();
 		// cameraFolder.open();
+
+		const anglesFolder = gui.addFolder('Angles');
+		let angleUpdater = {};
+		Object.keys(this.angles).forEach((angleName) => {
+			angleUpdater[angleName] = () => {
+				this.updateAngle(angleName);
+			};
+			anglesFolder.add(angleUpdater, angleName);
+		});
 
 		const actionsFolder = gui.addFolder('Actions');
 		actionsFolder.add({
