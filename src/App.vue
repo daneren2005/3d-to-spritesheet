@@ -40,10 +40,12 @@ export default {
 			0.01,
 			1000
 		);
-		camera.position.set(-0.09, 0.82, 0.61);
+		camera.position.set(0, 1.05, 0.32);
 		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
 		const renderer = new THREE.WebGLRenderer({
+			// So we can save canvas to a PNG
+			preserveDrawingBuffer: true,
 			alpha: true
 		});
 
@@ -131,7 +133,6 @@ export default {
 											'models/ToonRTS_demo_Knight/model@attack.fbx',
 											(object) => {
 												console.log('loaded attack');
-				console.warn('rotation: ', camera.rotation);
 												//console.dir((object as THREE.Object3D).animations[0])
 												const animationAction = mixer.clipAction(
 													object.animations[0]
@@ -190,9 +191,9 @@ export default {
 		function onWindowResize() {
 			camera.updateProjectionMatrix();
 
-			let newSize = Math.min(window.innerWidth, window.innerHeight);
-			renderer.setSize(newSize);
-			render()
+			/*let newSize = Math.min(window.innerWidth, window.innerHeight);
+			renderer.setSize(newSize);*/
+			render();
 		}
 
 		const stats = Stats()
@@ -241,6 +242,17 @@ export default {
 		cameraFolder.add(camera.rotation, 'y', -4, 4).name('Rotation y').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'z', -4, 4).name('Rotation z').step(0.01).listen();
 		cameraFolder.open();
+
+		const actionsFolder = gui.addFolder('Actions');
+		actionsFolder.add({
+			'Save to PNG': () => {
+				let a = document.createElement('a');
+				let imgData = renderer.domElement.toDataURL();
+				a.href = imgData.replace('image/png', 'image/octet-stream');
+				a.download = 'canvas.png'
+				a.click();
+			}
+		}, 'Save to PNG');
 
 
 		const clock = new THREE.Clock()
