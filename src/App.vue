@@ -71,7 +71,7 @@ export default {
 					let action = this.animationActions[animationName];
 
 					console.log(`Generating ${animationName} animation at angle ${angleName}`);
-					await this.generateFrameFromAnimation(zip, action, `${animationName} ${angleName} `);
+					await this.generateFrameFromAnimation(zip, action, `${animationName} ${angleName}`);
 				}
 			}
 
