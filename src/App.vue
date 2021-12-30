@@ -32,6 +32,7 @@ export default {
 			camera: null,
 			gui: null,
 			activeAction: null,
+			animationActions: {},
 			recordParams: {
 				Frames: 10
 			},
@@ -52,26 +53,61 @@ export default {
 				this.activeAction.play();
 			}
 		},
-		async recordAnimation(action, name = 'test') {
-			this.setAction(action);
+
+		async recordAll(name = 'test') {
+			let angleNames = Object.keys(this.angles);
+			angleNames.sort((a, b) => {
+				return parseInt(a) - parseInt(b);
+			});
+			let animationNames = Object.keys(this.animationActions);
 
 			let zip = new JSZip();
+			for(let i = 0; i < angleNames.length; i++) {
+				let angleName = angleNames[i];
+
+				this.camera.position.set(...this.angles[angleName]);
+				for(let j = 0; j < animationNames.length; j++) {
+					let animationName = animationNames[j];
+					let action = this.animationActions[animationName];
+
+					console.log(`Generating ${animationName} animation at angle ${angleName}`);
+					await this.generateFrameFromAnimation(zip, action, `${animationName} ${angleName} `);
+				}
+			}
+
+			zip.generateAsync({
+				type: 'blob',
+				streamFiles: true
+			}/*, (metadata) => {
+				console.log('update: ', metadata);
+			}*/).then((content) => {
+				saveAs(content, `${name}.zip`);
+			});
+		},
+		async recordAnimation(action, name = 'test') {
+			let zip = new JSZip();
+			await this.generateFrameFromAnimation(zip, action, name);
+
+			zip.generateAsync({type: 'blob'}).then((content) => {
+				saveAs(content, `${name}.zip`);
+			});
+		},
+
+		async generateFrameFromAnimation(zip, action, frameName) {
+			this.setAction(action);
+
 			let duration = action._clip.duration;
 			const FRAMES = this.recordParams.Frames;
 			let skipTime = Math.floor(duration / FRAMES / 16.6 * 1000);
 
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
-				zip.file(`frame ${i + 1}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
+				zip.file(`${frameName} ${i + 1}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
 
 				for(let j = 0; j < skipTime; j++) {
 					await raf();
 				}
 			}
-
-			zip.generateAsync({type: 'blob'}).then((content) => {
-				saveAs(content, `${name}.zip`);
-			});
 		},
 		getPNGDataUrl() {
 			return this.renderer.domElement.toDataURL('image/png');
@@ -170,6 +206,7 @@ export default {
 						animationActions.push(animationAction);
 						animationsFolder.add(animations, 'idle');
 						actionsFolder.add(recordAnimations, 'idle');
+						this.animationActions.idle = animationAction;
 
 						//add an animation from another file
 						fbxLoader.load(
@@ -180,7 +217,8 @@ export default {
 								);
 								animationActions.push(animationAction);
 								animationsFolder.add(animations, 'walk');
-								actionsFolder.add(recordAnimations, 'walk');
+								// actionsFolder.add(recordAnimations, 'walk');
+								// this.animationActions.walk = animationAction;
 								this.activeAction = animationAction;
 
 								//add an animation from another file
@@ -194,6 +232,7 @@ export default {
 										animationActions.push(animationAction);
 										animationsFolder.add(animations, 'run');
 										actionsFolder.add(recordAnimations, 'run');
+										this.animationActions.run = animationAction;
 
 										fbxLoader.load(
 											'models/ToonRTS_demo_Knight/model@attack.fbx',
@@ -205,6 +244,7 @@ export default {
 												animationActions.push(animationAction);
 												animationsFolder.add(animations, 'attack');
 												actionsFolder.add(recordAnimations, 'attack');
+												this.animationActions.attack = animationAction;
 
 												modelReady = true;
 												this.setAction(animationActions[0]);
@@ -273,9 +313,9 @@ export default {
 			idle: () => {
 				this.recordAnimation(animationActions[0], 'Idle');
 			},
-			walk: () => {
+			/*walk: () => {
 				this.recordAnimation(animationActions[1], 'Walk');
-			},
+			},*/
 			run: () => {
 				this.recordAnimation(animationActions[2], 'Run');
 			},
@@ -318,14 +358,10 @@ export default {
 
 		const actionsFolder = gui.addFolder('Actions');
 		actionsFolder.add({
-			'Save to PNG': () => {
-				let a = document.createElement('a');
-				let imgData = this.getPNGDataUrl();
-				a.href = imgData.replace('image/png', 'image/octet-stream');
-				a.download = 'canvas.png';
-				a.click();
+			'Save All': () => {
+				this.recordAll('Footman');
 			}
-		}, 'Save to PNG');
+		}, 'Save All');
 		actionsFolder.add(this.recordParams, 'Frames', 0, 20).step(1).listen();
 
 
