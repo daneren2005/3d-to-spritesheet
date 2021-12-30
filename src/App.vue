@@ -15,23 +15,30 @@ import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 
+const MAX_ANGLE = Math.PI / 8;
+
 export default {
-	data: () => ({
-		renderer: null,
-		camera: null,
-		gui: null,
-		activeAction: null,
-		recordParams: {
-			Frames: 6
-		},
-		frameSize: 256,
-		angles: {
-			Down: [0, 1.05, 0.32],
-			Right: [-0.32, 1.05, 0],
-			Up: [0, 1.05, -0.32],
-			Left: [0.32, 1.05, 0]
+	data: () => {
+		let angleCount = 16;
+		let angles = {};
+		for(let i = 0; i < angleCount; i++) {
+			let angle = (360 / angleCount) * i;
+			let radians = angle * Math.PI / 180;
+			angles[angle] = [Math.sin(radians) * MAX_ANGLE, 1.05, Math.cos(radians) * MAX_ANGLE];
 		}
-	}),
+
+		return {
+			renderer: null,
+			camera: null,
+			gui: null,
+			activeAction: null,
+			recordParams: {
+				Frames: 10
+			},
+			frameSize: 256,
+			angles
+		};
+	},
 	methods: {
 		setAction(toAction) {
 			if(toAction != this.activeAction) {
@@ -105,7 +112,7 @@ export default {
 			0.01,
 			1000
 		);
-		camera.position.set(...this.angles.Down);
+		camera.position.set(...Object.values(this.angles)[0]);
 		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
 		const renderer = this.renderer = new THREE.WebGLRenderer({
@@ -297,7 +304,12 @@ export default {
 
 		const anglesFolder = gui.addFolder('Angles');
 		let angleUpdater = {};
-		Object.keys(this.angles).forEach((angleName) => {
+
+		let angleNames = Object.keys(this.angles);
+		angleNames.sort((a, b) => {
+			return parseInt(a) - parseInt(b);
+		});
+		angleNames.forEach((angleName) => {
 			angleUpdater[angleName] = () => {
 				this.updateAngle(angleName);
 			};
