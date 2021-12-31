@@ -24,7 +24,7 @@ export default {
 		for(let i = 0; i < angleCount; i++) {
 			let angle = (360 / angleCount) * i;
 			let radians = angle * Math.PI / 180;
-			angles[angle] = [Math.sin(radians) * MAX_ANGLE, 1.05, Math.cos(radians) * MAX_ANGLE];
+			angles[angle] = [-Math.cos(radians) * MAX_ANGLE, 1.05, Math.sin(radians) * MAX_ANGLE];
 		}
 
 		return {
