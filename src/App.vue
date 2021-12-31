@@ -37,7 +37,7 @@ export default {
 				Frames: 10
 			},
 			frameSize: 256,
-			sheetSize: 2048,
+			sheetSize: 4096,
 			angles
 		};
 	},
@@ -92,7 +92,7 @@ export default {
 			});
 			let animationNames = Object.keys(this.animationActions);
 
-			let options = this.initRecordings();
+			let options = this.initRecordings(name);
 			for(let j = 0; j < animationNames.length; j++) {
 				for(let i = 0; i < angleNames.length; i++) {
 					let angleName = angleNames[i];
@@ -102,9 +102,10 @@ export default {
 					let { action, frames } = this.animationActions[animationName];
 
 					console.log(`Generating ${animationName} animation at angle ${angleName}`);
-					await this.drawFramesFromAnimation(options, action, frames);
+					await this.drawFramesFromAnimation(options, action, frames, animationName, angleName);
 				}
 			}
+			this.finishRecordings(options);
 
 			options.zip.generateAsync({
 				type: 'blob',
@@ -116,8 +117,8 @@ export default {
 			});
 		},
 		async recordAnimation(action, name = 'test') {
-			let options = this.initRecordings();
-			await this.drawFramesFromAnimation(options, action);
+			let options = this.initRecordings(name);
+			await this.drawFramesFromAnimation(options, action, null, name, 0);
 			this.finishRecordings(options);
 
 			options.zip.generateAsync({
@@ -126,7 +127,7 @@ export default {
 				saveAs(content, `${name}.zip`);
 			});
 		},
-		initRecordings() {
+		initRecordings(modelName) {
 			let canvas = document.createElement('canvas');
 			canvas.width = this.sheetSize;
 			canvas.height = this.sheetSize;
@@ -138,13 +139,17 @@ export default {
 				ctx,
 				row: 0,
 				column: 0,
-				sheet: 0
+				sheet: 0,
+				json: {},
+				modelName
 			};
 		},
 		finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
-				options.zip.file(`${options.sheet}.png`, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
+				options.zip.file(`${options.modelName}_${options.sheet}.png`, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
 			}
+
+			options.zip.file('animations.json', JSON.stringify(options.json, null, '\t'));
 		},
 
 		async generateFrameFromAnimation(zip, action, frames, frameName) {
@@ -163,7 +168,7 @@ export default {
 				}
 			}
 		},
-		async drawFramesFromAnimation(options, action, frames) {
+		async drawFramesFromAnimation(options, action, frames, animationName, angle) {
 			this.setAction(action);
 
 			let duration = action._clip.duration;
@@ -172,24 +177,35 @@ export default {
 
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
-				this.drawFrameFromAnimation(options);
+				this.drawFrameFromAnimation(options, animationName, angle);
 
 				for(let j = 0; j < skipTime; j++) {
 					await raf();
 				}
 			}
 		},
-		async drawFrameFromAnimation(options) {
+		async drawFrameFromAnimation(options, animationName, angle) {
 			options.ctx.drawImage(this.renderer.domElement, options.column * this.frameSize, options.row * this.frameSize);
-
+			
 			const maxSize = this.sheetSize / this.frameSize;
+			if(!options.json[animationName]) {
+				options.json[animationName] = {
+					sheet: `${options.modelName}_${options.sheet}.png`,
+					directions: {}
+				};
+			}
+			if(!options.json[animationName].directions[angle]) {
+				options.json[animationName].directions[angle] = [];
+			}
+			options.json[animationName].directions[angle].push(options.row * maxSize + options.column);
+
 			options.column++;
 			if(options.column >= maxSize) {
 				options.column = 0;
 				options.row++;
 
 				if(options.row >= maxSize) {
-					options.zip.file(`${options.sheet}.png`, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
+					options.zip.file(`${options.modelName}_${options.sheet}.png`, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
 
 					options.row = 0;
 					let canvas = document.createElement('canvas');
@@ -304,7 +320,7 @@ export default {
 						animationActions.push(animationAction);
 						animationsFolder.add(animations, 'idle');
 						actionsFolder.add(recordAnimations, 'idle');
-						this.addAnimation('idle', animationAction);
+						this.addAnimation('base', animationAction, 1);
 
 						//add an animation from another file
 						fbxLoader.load(
@@ -329,7 +345,7 @@ export default {
 										animationActions.push(animationAction);
 										animationsFolder.add(animations, 'run');
 										actionsFolder.add(recordAnimations, 'run');
-										this.addAnimation('run', animationAction);
+										this.addAnimation('walk', animationAction);
 
 										fbxLoader.load(
 											'models/ToonRTS_demo_Knight/model@attack.fbx',
