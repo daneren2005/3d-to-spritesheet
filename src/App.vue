@@ -24,6 +24,11 @@ export default {
 		let angles = {};
 		for(let i = 0; i < angleCount; i++) {
 			let angle = (360 / angleCount) * i;
+			// Can just mirror left/right to save space
+			if(angle > 90 && angle < 270) {
+				continue;
+			}
+
 			let radians = angle * Math.PI / 180;
 			angles[angle] = [-Math.cos(radians) * MAX_ANGLE, 1.05, Math.sin(radians) * MAX_ANGLE];
 		}
@@ -128,7 +133,18 @@ export default {
 		},
 		async recordAnimation(action, name = 'test') {
 			let options = this.initRecordings(name);
-			await this.drawFramesFromAnimation(options, action, null, name, 0);
+
+			let angleNames = Object.keys(this.angles);
+			angleNames.sort((a, b) => {
+				return parseInt(a) - parseInt(b);
+			});
+			for(let i = 0; i < angleNames.length; i++) {
+				let angleName = angleNames[i];
+				this.camera.position.set(...this.angles[angleName]);
+
+				let { frames } = this.animationActions[name];
+				await this.drawFramesFromAnimation(options, action, frames, name, angleName);
+			}
 			this.finishRecordings(options);
 
 			options.zip.generateAsync({
@@ -208,6 +224,20 @@ export default {
 				options.json[animationName].directions[angle] = [];
 			}
 			options.json[animationName].directions[angle].push(options.row * maxSize + options.column);
+			// Still record the flipped side
+			if(angle != 90 && angle != 270) {
+				let altAngle = null;
+				if(angle < 90) {
+					altAngle = 180 - angle;
+				} else {
+					altAngle = (360 - angle) + 180;
+				}
+
+				if(!options.json[animationName].directions[altAngle]) {
+					options.json[animationName].directions[altAngle] = [];
+				}
+				options.json[animationName].directions[altAngle].push(options.row * maxSize + options.column);
+			}
 
 			options.column++;
 			if(options.column >= maxSize) {
@@ -342,6 +372,8 @@ export default {
 				let frames = this.recordParams.Frames;
 				if(animationName === 'idle') {
 					frames = 1;
+				} else if(animationName === 'run') {
+					frames = 4;
 				} else if(animationName === 'attack') {
 					frames = 8;
 				}
