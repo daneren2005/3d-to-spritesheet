@@ -1,5 +1,5 @@
 <template>
-	<div id="app">
+	<div id="app" @drop.prevent="droppedFiles" @dragover.prevent>
 		
 	</div>
 </template>
@@ -29,6 +29,7 @@ export default {
 		}
 
 		return {
+			currentModel: null,
 			modelReady: false,
 			renderer: null,
 			camera: null,
@@ -38,6 +39,7 @@ export default {
 			activeAction: null,
 			animationActions: {},
 			animationsFolder: null,
+			modelFolder: null,
 			actionsFolder: null,
 			recordParams: {
 				Frames: 10
@@ -52,7 +54,9 @@ export default {
 			if(toAction != this.activeAction) {
 				let lastAction = this.activeAction;
 				this.activeAction = toAction;
-				lastAction.stop();
+				if(lastAction) {
+					lastAction.stop();
+				}
 				// For taking screenshots we want an instant transition to start recording
 				/*lastAction.fadeOut(1);
 				this.activeAction.reset();
@@ -245,17 +249,45 @@ export default {
 			this.camera.position.set(...angles);
 		},
 
-		async loadModel() {
+		async loadModelFromUrls(urls) {
+			let blobs = [];
+			for(let i = 0; i < urls.length; i++) {
+				const url = urls[i];
+				let response = await axios.get(url, {
+					responseType: 'blob'
+				});
+
+				blobs.push({
+					name: url.split('/').at(-1).toLowerCase(),
+					blob: response.data
+				});
+			}
+
+			this.loadModelFromFiles(blobs);
+		},
+		async loadModelFromFiles(blobs) {
+			if(this.currentModel) {
+				this.scene.remove(this.currentModel);
+				this.currentModel = null;
+			}
+
 			this.modelReady = false;
 			const manager = new LoadingManager();
 			manager.addHandler( /\.tga$/i, new TGALoader(manager) );
 			const fbxLoader = new FBXLoader(manager);
 
-			let blobs = {};
-			let textureBlob = null;
+			let modelBlobSet = blobs.find(({name}) => name.includes('.fbx') && !name.includes('@'));
+			let modelBlob = modelBlobSet.blob;
+			let modelName = modelBlobSet.name;
+			modelBlob = await this.fixModelData(modelBlob);
+			let textureBlob = blobs.find(({name}) => name.includes('.tga')).blob;
 			manager.setURLModifier((url) => {
-				if(blobs[url]) {
-					return URL.createObjectURL(blobs[url]);
+				let matchingBlob = blobs.find(({name}) => name.includes(url));
+
+				if(modelName.includes(url)) {
+					return URL.createObjectURL(modelBlob);
+				} else if(matchingBlob) {
+					return URL.createObjectURL(matchingBlob.blob);
 				} else if(url.includes('.tga') && textureBlob) {
 					return URL.createObjectURL(textureBlob);
 				} else {
@@ -263,87 +295,69 @@ export default {
 				}
 			});
 
-			// TODO: Refactor these to be dynamic based on what is loaded
-			const animations = {
-				idle: () => {
-					this.setAction(this.animationActions.base.action);
-				},
-				walk: () => {
-					this.setAction(this.animationActions.walk.action);
-				},
-				attack: () => {
-					this.setAction(this.animationActions.attack.action);
-				}
-			};
-			const recordAnimations = {
-				idle: () => {
-					this.recordAnimation(this.animationActions.base.action, 'Idle');
-				},
-				walk: () => {
-					this.recordAnimation(this.animationActions.walk.action, 'Walk');
-				},
-				attack: () => {
-					this.recordAnimation(this.animationActions.attack.action, 'Attack');
-				}
-			};
+			const animations = {};
+			const recordAnimations = {};
 
-			blobs['model.fbx'] = await this.loadModelDirect('models/ToonRTS_demo_Knight/model.fbx');
-			let textureResponse = await axios.get('models/ToonRTS_demo_Knight/DemoTexture.tga', {
-				responseType: 'blob'
-			});
-			/*blobs['model.fbx'] = await this.loadModelDirect('models/archer/WK_SM_Archer_A.FBX');
-			let textureResponse = await axios.get('models/archer/WK_Standard_Units.tga', {
-				responseType: 'blob'
-			});*/
-			blobs['./DemoTexture.tga'] = textureBlob = textureResponse.data;
-
-			let model = await fbxLoadPromise(fbxLoader, 'model.fbx');
+			let model = this.currentModel = await fbxLoadPromise(fbxLoader, modelName);
 			model.scale.set(0.01, 0.01, 0.01);
 			this.mixer = new THREE.AnimationMixer(model);
 
 			this.scene.add(model);
-			let modelFolder = this.gui.addFolder('Model');
-			modelFolder.add(model.position, 'x', -4, 4).step(0.1).listen();
-			modelFolder.add(model.position, 'y', -4, 4).step(0.1).listen();
-			modelFolder.add(model.position, 'z', -4, 4).step(0.1).listen();
+			if(this.modelFolder) {
+				while(this.modelFolder.__controllers.length) {
+					this.modelFolder.remove(this.modelFolder.__controllers[0]);
+				}
+			} else {
+				this.modelFolder = this.gui.addFolder('Model');
+			}
+			this.modelFolder.add(model.position, 'x', -4, 4).step(0.1).listen();
+			this.modelFolder.add(model.position, 'y', -4, 4).step(0.1).listen();
+			this.modelFolder.add(model.position, 'z', -4, 4).step(0.1).listen();
 
+			while(this.animationsFolder.__controllers.length) {
+				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
+			}
+			while(this.actionsFolder.__controllers.length > 3) {
+				this.actionsFolder.remove(this.actionsFolder.__controllers.at(-1));
+			}
 
-			let idleAnimation = await fbxLoadPromise(fbxLoader, 'models/ToonRTS_demo_Knight/model@idle.fbx');
-			const idleAction = this.mixer.clipAction(
-				idleAnimation.animations[0]
-			);
-			this.animationsFolder.add(animations, 'idle');
-			this.actionsFolder.add(recordAnimations, 'idle');
-			this.addAnimation('base', idleAction, 1);
+			let animationBlobs = blobs.filter(({name}) => name.includes('@') && name.includes('.fbx'));
+			for(let i = 0; i < animationBlobs.length; i++) {
+				let { name } = animationBlobs[i];
+				let animationName = name.substring(name.indexOf('@') + 1, name.lastIndexOf('.fbx'));
+				let animationObject = await fbxLoadPromise(fbxLoader, name);
+				let animationAction = this.mixer.clipAction(animationObject.animations[0]);
 
+				// Add actions to folders
+				animations[animationName] = () => {
+					this.setAction(animationAction);
+				};
+				this.animationsFolder.add(animations, animationName);
 
-			let runAnimation = await fbxLoadPromise(fbxLoader, 'models/ToonRTS_demo_Knight/model@run.fbx');
-			const runAction = this.mixer.clipAction(
-				runAnimation.animations[0]
-			);
-			this.animationsFolder.add(animations, 'walk');
-			this.actionsFolder.add(recordAnimations, 'walk');
-			this.addAnimation('walk', runAction);
-			this.activeAction = runAction;
+				recordAnimations[animationName] = () => {
+					this.recordAnimation(animationAction, animationName);
+				};
+				this.actionsFolder.add(recordAnimations, animationName);
 
+				let frames = this.recordParams.Frames;
+				if(animationName === 'idle') {
+					frames = 1;
+				} else if(animationName === 'attack') {
+					frames = 8;
+				}
 
-			let attackAnimation = await fbxLoadPromise(fbxLoader, 'models/ToonRTS_demo_Knight/model@attack.fbx');
-			const attackAction = this.mixer.clipAction(
-				attackAnimation.animations[0]
-			);
-			this.animationsFolder.add(animations, 'attack');
-			this.actionsFolder.add(recordAnimations, 'attack');
-			this.addAnimation('attack', attackAction, 8);
+				this.addAnimation(animationName, animationAction, frames);
+			}
 
 			this.modelReady = true;
-			this.setAction(this.animationActions.base.action);
+			if(this.animationActions.idle) {
+				this.setAction(this.animationActions.idle.action);
+			} else if(Object.values(this.animationActions).length > 0) {
+				this.setAction(Object.values(this.animationActions)[0].action);
+			}
 		},
-		async loadModelDirect(location) {
-			let modelResponse = await axios.get(location, {
-				responseType: 'arraybuffer'
-			});
-			let arrayBuffer = modelResponse.data;
-
+		async fixModelData(startBlob) {
+			let arrayBuffer = await startBlob.arrayBuffer();
 			let modelArray = new Uint8Array(arrayBuffer);
 
 			let matchCount = 0;
@@ -371,6 +385,22 @@ export default {
 			}
 
 			return new Blob([arrayBuffer]);
+		},
+		droppedFiles(event) {
+			let files = [...event.dataTransfer.files];
+			let modelFile = files.find(file => file.name.toLowerCase().includes('.fbx') && !file.name.includes('@'));
+			let textureFile = files.find(file => file.name.toLowerCase().includes('.tga'));
+			if(!modelFile || !textureFile) {
+				alert('You need to upload at least a fbx and a texture file');
+				return;
+			}
+
+			this.loadModelFromFiles(files.map(file => {
+				return {
+					blob: file,
+					name: file.name.toLowerCase()
+				};
+			}));
 		}
 	},
 	mounted() {
@@ -416,7 +446,16 @@ export default {
 		// controls.autoRotate = true;
 		controls.target.set(0, 0, 0);
 
-		this.loadModel();
+		// this.loadModel();
+		this.loadModelFromUrls([
+			'models/ToonRTS_demo_Knight/model.fbx',
+			// 'models/archer/WK_SM_Archer_A.FBX',
+			'models/ToonRTS_demo_Knight/DemoTexture.tga',
+			// 'models/archer/WK_Standard_Units.tga',
+			'models/ToonRTS_demo_Knight/model@idle.fbx',
+			'models/ToonRTS_demo_Knight/model@run.fbx',
+			'models/ToonRTS_demo_Knight/model@attack.fbx'
+		]);
 
 		window.addEventListener('resize', this.onWindowResize, false);
 		this.onWindowResize();
