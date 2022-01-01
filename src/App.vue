@@ -14,6 +14,7 @@ import Stats from 'three/examples/jsm/libs/stats.module';
 import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
+import axios from 'axios';
 
 const MAX_ANGLE = Math.PI / 8;
 
@@ -247,8 +248,17 @@ export default {
 		async loadModel() {
 			this.modelReady = false;
 			const manager = new LoadingManager();
-			manager.addHandler( /\.tga$/i, new TGALoader() );
+			manager.addHandler( /\.tga$/i, new TGALoader(manager) );
 			const fbxLoader = new FBXLoader(manager);
+
+			let blobs = {};
+			manager.setURLModifier((url) => {
+				if(blobs[url]) {
+					return URL.createObjectURL(blobs[url]);
+				} else {
+					return url;
+				}
+			});
 
 			// TODO: Refactor these to be dynamic based on what is loaded
 			const animations = {
@@ -275,13 +285,16 @@ export default {
 			};
 
 			// models/archer/WK_SM_Archer_A.FBX
-			/*fetch('models/archer/WK_SM_Archer_A.FBX').then((response) => {
-				// TODO: Grab stream and rename texture to correct position
-				const reader = response.body.getReader();
-				console.log('response: ', response);
-			});*/
+			let modelResponse = await axios.get('models/ToonRTS_demo_Knight/model.fbx', {
+				responseType: 'blob'
+			});
+			blobs['model.fbx'] = modelResponse.data;
+			let textureResponse = await axios.get('models/ToonRTS_demo_Knight/DemoTexture.tga', {
+				responseType: 'blob'
+			});
+			blobs['./DemoTexture.tga'] = textureResponse.data;
 
-			let model = await fbxLoadPromise(fbxLoader, 'models/ToonRTS_demo_Knight/model.fbx');
+			let model = await fbxLoadPromise(fbxLoader, 'model.fbx');
 			model.scale.set(0.01, 0.01, 0.01);
 			this.mixer = new THREE.AnimationMixer(model);
 
