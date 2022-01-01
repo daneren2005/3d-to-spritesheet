@@ -28,11 +28,16 @@ export default {
 		}
 
 		return {
+			modelReady: false,
 			renderer: null,
 			camera: null,
 			gui: null,
+			scene: null,
+			mixer: null,
 			activeAction: null,
 			animationActions: {},
+			animationsFolder: null,
+			actionsFolder: null,
 			recordParams: {
 				Frames: 10
 			},
@@ -237,10 +242,128 @@ export default {
 		updateAngle(angleName) {
 			let angles = this.angles[angleName];
 			this.camera.position.set(...angles);
+		},
+
+		loadModel() {
+			this.modelReady = false;
+			const manager = new LoadingManager();
+			manager.addHandler( /\.tga$/i, new TGALoader() );
+			const fbxLoader = new FBXLoader(manager);
+
+			// TODO: Refactor these to be dynamic based on what is loaded
+			const animations = {
+				idle: () => {
+					this.setAction(this.animationActions.base.action);
+				},
+				walk: () => {
+					this.setAction(this.animationActions.walk.action);
+				},
+				attack: () => {
+					this.setAction(this.animationActions.attack.action);
+				}
+			};
+			const recordAnimations = {
+				idle: () => {
+					this.recordAnimation(this.animationActions.base.action, 'Idle');
+				},
+				walk: () => {
+					this.recordAnimation(this.animationActions.walk.action, 'Walk');
+				},
+				attack: () => {
+					this.recordAnimation(this.animationActions.attack.action, 'Attack');
+				}
+			};
+
+			/*fetch('models/archer/WK_SM_Archer_A.FBX').then((response) => {
+				// TODO: Grab stream and rename texture to correct position
+				const reader = response.body.getReader();
+				console.log('response: ', response);
+			});*/
+			fbxLoader.load(
+				'models/ToonRTS_demo_Knight/model.fbx',
+				(object) => {
+					object.scale.set(0.01, 0.01, 0.01);
+					this.mixer = new THREE.AnimationMixer(object);
+
+					this.scene.add(object);
+					let modelFolder = this.gui.addFolder('Model');
+					modelFolder.add(object.position, 'x', -4, 4).step(0.1).listen();
+					modelFolder.add(object.position, 'y', -4, 4).step(0.1).listen();
+					modelFolder.add(object.position, 'z', -4, 4).step(0.1).listen();
+
+					//add an animation from another file
+					fbxLoader.load(
+						'models/ToonRTS_demo_Knight/model@idle.fbx',
+						(object) => {
+							const animationAction = this.mixer.clipAction(
+								object.animations[0]
+							);
+							this.animationsFolder.add(animations, 'idle');
+							this.actionsFolder.add(recordAnimations, 'idle');
+							this.addAnimation('base', animationAction, 1);
+
+							//add an animation from another file
+							fbxLoader.load(
+								'models/ToonRTS_demo_Knight/model@run.fbx',
+								(object) => {
+									//console.dir((object as THREE.Object3D).animations[0])
+									const animationAction = this.mixer.clipAction(
+										object.animations[0]
+									);
+									this.animationsFolder.add(animations, 'walk');
+									this.actionsFolder.add(recordAnimations, 'walk');
+									this.addAnimation('walk', animationAction);
+									this.activeAction = animationAction;
+
+									fbxLoader.load(
+										'models/ToonRTS_demo_Knight/model@attack.fbx',
+										(object) => {
+											//console.dir((object as THREE.Object3D).animations[0])
+											const animationAction = this.mixer.clipAction(
+												object.animations[0]
+											);
+											this.animationsFolder.add(animations, 'attack');
+											this.actionsFolder.add(recordAnimations, 'attack');
+											this.addAnimation('attack', animationAction, 8);
+
+											this.modelReady = true;
+											this.setAction(this.animationActions.base.action);
+										},
+										(xhr) => {
+											
+										},
+										(error) => {
+											console.error(error);
+										}
+									);
+								},
+								(xhr) => {
+									
+								},
+								(error) => {
+									console.error(error);
+								}
+							);
+						},
+						(xhr) => {
+							
+						},
+						(error) => {
+							console.error(error);
+						}
+					);
+				},
+				(xhr) => {
+					
+				},
+				(error) => {
+					console.error(error);
+				}
+			);
 		}
 	},
 	mounted() {
-		const scene = new THREE.Scene();
+		const scene = this.scene = new THREE.Scene();
 		// scene.add(new THREE.AxesHelper(5))
 
 		const light1  = new THREE.AmbientLight(0xFFFFFF, 0.3);
@@ -282,125 +405,7 @@ export default {
 		// controls.autoRotate = true;
 		controls.target.set(0, 0, 0);
 
-		const manager = new LoadingManager();
-		manager.addHandler( /\.tga$/i, new TGALoader() );
-
-		let mixer;
-		let modelReady = false;
-		const animationActions = [];
-		const fbxLoader = new FBXLoader(manager);
-
-		fbxLoader.load(
-			'models/ToonRTS_demo_Knight/model.fbx',
-			(object) => {
-				object.scale.set(0.01, 0.01, 0.01);
-				mixer = new THREE.AnimationMixer(object);
-
-				// Model doesn't have any
-				/*const animationAction = mixer.clipAction(
-					object.animations[0]
-				)
-				animationActions.push(animationAction)
-				animationsFolder.add(animations, 'default')
-				activeAction = animationActions[0]*/
-
-				scene.add(object);
-				let modelFolder = gui.addFolder('Model');
-				modelFolder.add(object.position, 'x', -4, 4).step(0.1).listen();
-				modelFolder.add(object.position, 'y', -4, 4).step(0.1).listen();
-				modelFolder.add(object.position, 'z', -4, 4).step(0.1).listen();
-
-				//add an animation from another file
-				fbxLoader.load(
-					'models/ToonRTS_demo_Knight/model@idle.fbx',
-					(object) => {
-						const animationAction = mixer.clipAction(
-							object.animations[0]
-						);
-						animationActions.push(animationAction);
-						animationsFolder.add(animations, 'idle');
-						actionsFolder.add(recordAnimations, 'idle');
-						this.addAnimation('base', animationAction, 1);
-
-						//add an animation from another file
-						fbxLoader.load(
-							'models/ToonRTS_demo_Knight/model@walk.fbx',
-							(object) => {
-								const animationAction = mixer.clipAction(
-									object.animations[0]
-								);
-								animationActions.push(animationAction);
-								animationsFolder.add(animations, 'walk');
-								// actionsFolder.add(recordAnimations, 'walk');
-								this.activeAction = animationAction;
-
-								//add an animation from another file
-								fbxLoader.load(
-									'models/ToonRTS_demo_Knight/model@run.fbx',
-									(object) => {
-										//console.dir((object as THREE.Object3D).animations[0])
-										const animationAction = mixer.clipAction(
-											object.animations[0]
-										);
-										animationActions.push(animationAction);
-										animationsFolder.add(animations, 'run');
-										actionsFolder.add(recordAnimations, 'run');
-										this.addAnimation('walk', animationAction);
-
-										fbxLoader.load(
-											'models/ToonRTS_demo_Knight/model@attack.fbx',
-											(object) => {
-												//console.dir((object as THREE.Object3D).animations[0])
-												const animationAction = mixer.clipAction(
-													object.animations[0]
-												);
-												animationActions.push(animationAction);
-												animationsFolder.add(animations, 'attack');
-												actionsFolder.add(recordAnimations, 'attack');
-												this.addAnimation('attack', animationAction, 8);
-
-												modelReady = true;
-												this.setAction(animationActions[0]);
-											},
-											(xhr) => {
-												
-											},
-											(error) => {
-												console.error(error);
-											}
-										);
-									},
-									(xhr) => {
-										
-									},
-									(error) => {
-										console.error(error);
-									}
-								);
-							},
-							(xhr) => {
-								
-							},
-							(error) => {
-								console.error(error);
-							}
-						);
-					},
-					(xhr) => {
-						
-					},
-					(error) => {
-						console.error(error);
-					}
-				);
-			},
-			(xhr) => {
-				
-			},
-			(error) => {
-				console.error(error);
-			}
-		);
+		this.loadModel();
 
 		window.addEventListener('resize', this.onWindowResize, false);
 		this.onWindowResize();
@@ -408,37 +413,8 @@ export default {
 		const stats = Stats();
 		// this.$el.appendChild(stats.dom);
 
-		const animations = {
-			idle: () => {
-				this.setAction(animationActions[0]);
-			},
-			walk: () => {
-				this.setAction(animationActions[1]);
-			},
-			run: () => {
-				this.setAction(animationActions[2]);
-			},
-			attack: () => {
-				this.setAction(animationActions[3]);
-			}
-		};
-		const recordAnimations = {
-			idle: () => {
-				this.recordAnimation(animationActions[0], 'Idle');
-			},
-			/*walk: () => {
-				this.recordAnimation(animationActions[1], 'Walk');
-			},*/
-			run: () => {
-				this.recordAnimation(animationActions[2], 'Run');
-			},
-			attack: () => {
-				this.recordAnimation(animationActions[3], 'Attack');
-			}
-		};
-
 		const gui = this.gui = new GUI();
-		const animationsFolder = gui.addFolder('Animations');
+		this.animationsFolder = gui.addFolder('Animations');
 		// animationsFolder.open();
 
 		const cameraFolder = gui.addFolder('Camera');
@@ -469,33 +445,33 @@ export default {
 			anglesFolder.add(angleUpdater, angleName);
 		});
 
-		const actionsFolder = gui.addFolder('Actions');
-		actionsFolder.add({
+		this.actionsFolder = gui.addFolder('Actions');
+		this.actionsFolder.add({
 			'Save As Frames': () => {
 				this.recordAllAsFrames('Footman');
 			}
 		}, 'Save As Frames');
-		actionsFolder.add({
+		this.actionsFolder.add({
 			'Save As Sheets': () => {
 				this.recordAllAsSheets('Footman');
 			}
 		}, 'Save As Sheets');
-		actionsFolder.add(this.recordParams, 'Frames', 0, 20).step(1).listen();
-		actionsFolder.open();
+		this.actionsFolder.add(this.recordParams, 'Frames', 0, 20).step(1).listen();
+		this.actionsFolder.open();
 
 		const clock = new THREE.Clock();
 
-		function animate() {
+		const animate = () => {
 			requestAnimationFrame(animate);
 
 			controls.update();
 
-			if (modelReady) mixer.update(clock.getDelta());
+			if(this.modelReady) this.mixer.update(clock.getDelta());
 
 			render();
 
 			stats.update();
-		}
+		};
 
 		function render() {
 			renderer.render(scene, camera);
