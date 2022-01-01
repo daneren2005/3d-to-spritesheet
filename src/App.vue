@@ -252,9 +252,12 @@ export default {
 			const fbxLoader = new FBXLoader(manager);
 
 			let blobs = {};
+			let textureBlob = null;
 			manager.setURLModifier((url) => {
 				if(blobs[url]) {
 					return URL.createObjectURL(blobs[url]);
+				} else if(url.includes('.tga') && textureBlob) {
+					return URL.createObjectURL(textureBlob);
 				} else {
 					return url;
 				}
@@ -284,15 +287,15 @@ export default {
 				}
 			};
 
-			// models/archer/WK_SM_Archer_A.FBX
-			let modelResponse = await axios.get('models/ToonRTS_demo_Knight/model.fbx', {
-				responseType: 'blob'
-			});
-			blobs['model.fbx'] = modelResponse.data;
+			blobs['model.fbx'] = await this.loadModelDirect('models/ToonRTS_demo_Knight/model.fbx');
 			let textureResponse = await axios.get('models/ToonRTS_demo_Knight/DemoTexture.tga', {
 				responseType: 'blob'
 			});
-			blobs['./DemoTexture.tga'] = textureResponse.data;
+			/*blobs['model.fbx'] = await this.loadModelDirect('models/archer/WK_SM_Archer_A.FBX');
+			let textureResponse = await axios.get('models/archer/WK_Standard_Units.tga', {
+				responseType: 'blob'
+			});*/
+			blobs['./DemoTexture.tga'] = textureBlob = textureResponse.data;
 
 			let model = await fbxLoadPromise(fbxLoader, 'model.fbx');
 			model.scale.set(0.01, 0.01, 0.01);
@@ -334,6 +337,40 @@ export default {
 
 			this.modelReady = true;
 			this.setAction(this.animationActions.base.action);
+		},
+		async loadModelDirect(location) {
+			let modelResponse = await axios.get(location, {
+				responseType: 'arraybuffer'
+			});
+			let arrayBuffer = modelResponse.data;
+
+			let modelArray = new Uint8Array(arrayBuffer);
+
+			let matchCount = 0;
+			const psdSearchCodes = ['.', 'p', 's', 'd'].map(char => char.charCodeAt(0));
+			const tgaReplaceCodes = ['.', 't', 'g', 'a'].map(char => char.charCodeAt(0));
+			for(let i = 0; i < modelArray.length; i++) {
+				let matches = true;
+				for(let j = 0; j < psdSearchCodes.length; j++) {
+					if(modelArray[i + j] !== psdSearchCodes[j]) {
+						matches = false;
+						break;
+					}
+				}
+
+				if(matches) {
+					matchCount++;
+
+					for(let j = 0; j < psdSearchCodes.length; j++) {
+						modelArray[i + j] = tgaReplaceCodes[j];
+					}
+				}
+			}
+			if(matchCount > 0) {
+				console.warn(`Fixed: replaced .psd with .tga ${matchCount} times`);
+			}
+
+			return new Blob([arrayBuffer]);
 		}
 	},
 	mounted() {
