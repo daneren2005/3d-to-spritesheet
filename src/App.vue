@@ -457,7 +457,7 @@ export default {
 			0.01,
 			1000
 		);
-		camera.position.set(...Object.values(this.angles)[0]);
+		camera.position.set(...Object.values(this.angles)[3]);
 		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
 		const renderer = this.renderer = new THREE.WebGLRenderer({
