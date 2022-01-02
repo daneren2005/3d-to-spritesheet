@@ -47,7 +47,7 @@ export default {
 			modelFolder: null,
 			actionsFolder: null,
 			recordParams: {
-				Frames: 10
+				Frames: 4
 			},
 			frameSize: 256,
 			sheetSize: 4096,
@@ -300,6 +300,7 @@ export default {
 				this.scene.remove(this.currentModel);
 				this.currentModel = null;
 			}
+			this.animationActions = {};
 
 			this.modelReady = false;
 			const manager = new LoadingManager();
@@ -372,9 +373,7 @@ export default {
 				let frames = this.recordParams.Frames;
 				if(animationName === 'idle') {
 					frames = 1;
-				} else if(animationName === 'run') {
-					frames = 4;
-				} else if(animationName === 'attack') {
+				} else if(animationName.includes('attack')) {
 					frames = 8;
 				}
 
