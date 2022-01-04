@@ -50,7 +50,7 @@ export default {
 			recordParams: {
 				Frames: 4
 			},
-			frameSize: 1024,
+			frameSize: 256,
 			sheetSize: 4096,
 			angles
 		};
