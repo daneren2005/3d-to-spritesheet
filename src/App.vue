@@ -16,7 +16,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import axios from 'axios';
 
-const MAX_ANGLE = Math.PI / 8;
+const MAX_ANGLE = Math.PI / 6;
 
 export default {
 	data: () => {
@@ -35,6 +35,7 @@ export default {
 
 		return {
 			currentModel: null,
+			directionalLight: null,
 			modelReady: false,
 			renderer: null,
 			camera: null,
@@ -49,7 +50,7 @@ export default {
 			recordParams: {
 				Frames: 4
 			},
-			frameSize: 256,
+			frameSize: 1024,
 			sheetSize: 4096,
 			angles
 		};
@@ -82,7 +83,7 @@ export default {
 				for(let i = 0; i < angleNames.length; i++) {
 					let angleName = angleNames[i];
 
-					this.camera.position.set(...this.angles[angleName]);
+					this.updateAngle(angleName);
 					let animationName = animationNames[j];
 					let { action, frames } = this.animationActions[animationName];
 
@@ -112,7 +113,7 @@ export default {
 				for(let i = 0; i < angleNames.length; i++) {
 					let angleName = angleNames[i];
 
-					this.camera.position.set(...this.angles[angleName]);
+					this.updateAngle(angleName);
 					let animationName = animationNames[j];
 					let { action, frames } = this.animationActions[animationName];
 
@@ -140,7 +141,7 @@ export default {
 			});
 			for(let i = 0; i < angleNames.length; i++) {
 				let angleName = angleNames[i];
-				this.camera.position.set(...this.angles[angleName]);
+				this.updateAngle(angleName);
 
 				let { frames } = this.animationActions[name];
 				await this.drawFramesFromAnimation(options, action, frames, name, angleName);
@@ -200,6 +201,9 @@ export default {
 			let duration = action._clip.duration;
 			const FRAMES = frames || this.recordParams.Frames;
 			let skipTime = Math.floor(duration / FRAMES / 16.6 * 1000);
+			if(FRAMES <= 1) {
+				skipTime = 0;
+			}
 
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
@@ -263,7 +267,7 @@ export default {
 
 		onWindowResize() {
 			let size = Math.min(window.innerWidth, window.innerHeight);
-			let scale = Math.floor(size / this.frameSize);
+			let scale = size / this.frameSize;
 
 			this.renderer.domElement.style.transform = `scale(${scale})`;
 		},
@@ -277,6 +281,7 @@ export default {
 		updateAngle(angleName) {
 			let angles = this.angles[angleName];
 			this.camera.position.set(...angles);
+			this.directionalLight.position.copy(this.camera.position);
 		},
 
 		async loadModelFromUrls(urls) {
@@ -443,9 +448,9 @@ export default {
 		scene.add(light1);
 
 		const light2  = new THREE.DirectionalLight(0xFFFFFF, 0.8 * Math.PI);
-		light2.position.set(0.5, 0, 0.866); // ~60º
 		light2.name = 'main_light';
 		scene.add(light2);
+		this.directionalLight = light2;
 
 		const hemiLight = new THREE.HemisphereLight();
 		hemiLight.name = 'hemi_light';
@@ -457,7 +462,7 @@ export default {
 			0.01,
 			1000
 		);
-		camera.position.set(...Object.values(this.angles)[3]);
+		this.updateAngle('90');
 		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
 		const renderer = this.renderer = new THREE.WebGLRenderer({
