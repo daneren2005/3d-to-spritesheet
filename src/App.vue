@@ -52,7 +52,8 @@ export default {
 				frameSize: 256,
 				sheetSize: 4096
 			},
-			angles
+			angles,
+			isRecording: false
 		};
 	},
 	methods: {
@@ -184,35 +185,37 @@ export default {
 
 			let duration = action._clip.duration;
 			const FRAMES = frames || this.recordParams.frames;
-			let skipTime = Math.floor(duration / FRAMES / 16.6 * 1000);
+			let skipTime = duration / FRAMES;
 
+			this.isRecording = true;
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
 				zip.file(`${frameName} ${i + 1}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
 
-				for(let j = 0; j < skipTime; j++) {
-					await raf();
-				}
+				this.mixer.update(skipTime);
+				await raf();
 			}
+			this.isRecording = false;
 		},
 		async drawFramesFromAnimation(options, action, frames, animationName, angle) {
 			this.setAction(action);
 
 			let duration = action._clip.duration;
 			const FRAMES = frames || this.recordParams.frames;
-			let skipTime = Math.floor(duration / FRAMES / 16.6 * 1000);
+			let skipTime = duration / FRAMES;
 			if(FRAMES <= 1) {
 				skipTime = 0;
 			}
 
+			this.isRecording = true;
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
 				this.drawFrameFromAnimation(options, animationName, angle);
 
-				for(let j = 0; j < skipTime; j++) {
-					await raf();
-				}
+				this.mixer.update(skipTime);
+				await raf();
 			}
+			this.isRecording = false;
 		},
 		async drawFrameFromAnimation(options, animationName, angle) {
 			options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
@@ -559,7 +562,7 @@ export default {
 
 			controls.update();
 
-			if(this.modelReady) this.mixer.update(clock.getDelta());
+			if(this.modelReady && !this.isRecording) this.mixer.update(clock.getDelta());
 
 			render();
 
