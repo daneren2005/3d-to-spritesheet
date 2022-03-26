@@ -48,10 +48,10 @@ export default {
 			modelFolder: null,
 			actionsFolder: null,
 			recordParams: {
-				Frames: 4
+				frames: 4,
+				frameSize: 256,
+				sheetSize: 4096
 			},
-			frameSize: 256,
-			sheetSize: 4096,
 			angles
 		};
 	},
@@ -156,8 +156,8 @@ export default {
 		},
 		initRecordings(modelName) {
 			let canvas = document.createElement('canvas');
-			canvas.width = this.sheetSize;
-			canvas.height = this.sheetSize;
+			canvas.width = this.recordParams.sheetSize;
+			canvas.height = this.recordParams.sheetSize;
 			let ctx = canvas.getContext('2d');
 
 			return {
@@ -183,7 +183,7 @@ export default {
 			this.setAction(action);
 
 			let duration = action._clip.duration;
-			const FRAMES = frames || this.recordParams.Frames;
+			const FRAMES = frames || this.recordParams.frames;
 			let skipTime = Math.floor(duration / FRAMES / 16.6 * 1000);
 
 			await raf();
@@ -199,7 +199,7 @@ export default {
 			this.setAction(action);
 
 			let duration = action._clip.duration;
-			const FRAMES = frames || this.recordParams.Frames;
+			const FRAMES = frames || this.recordParams.frames;
 			let skipTime = Math.floor(duration / FRAMES / 16.6 * 1000);
 			if(FRAMES <= 1) {
 				skipTime = 0;
@@ -215,9 +215,9 @@ export default {
 			}
 		},
 		async drawFrameFromAnimation(options, animationName, angle) {
-			options.ctx.drawImage(this.renderer.domElement, options.column * this.frameSize, options.row * this.frameSize);
+			options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
 			
-			const maxSize = this.sheetSize / this.frameSize;
+			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
 			if(!options.json[animationName]) {
 				options.json[animationName] = {
 					sheet: `${options.modelName}_${options.sheet}.png`,
@@ -253,8 +253,8 @@ export default {
 
 					options.row = 0;
 					let canvas = document.createElement('canvas');
-					canvas.width = this.sheetSize;
-					canvas.height = this.sheetSize;
+					canvas.width = this.recordParams.sheetSize;
+					canvas.height = this.recordParams.sheetSize;
 					options.canvas = canvas;
 					options.ctx = canvas.getContext('2d');
 					options.sheet++;
@@ -267,7 +267,7 @@ export default {
 
 		onWindowResize() {
 			let size = Math.min(window.innerWidth, window.innerHeight);
-			let scale = size / this.frameSize;
+			let scale = size / this.recordParams.frameSize;
 
 			this.renderer.domElement.style.transform = `scale(${scale})`;
 		},
@@ -375,7 +375,7 @@ export default {
 				};
 				this.actionsFolder.add(recordAnimations, animationName);
 
-				let frames = this.recordParams.Frames;
+				let frames = this.recordParams.frames;
 				if(animationName === 'idle') {
 					frames = 1;
 				} else if(animationName.includes('attack')) {
@@ -471,7 +471,7 @@ export default {
 			alpha: true
 		});
 
-		renderer.setSize(this.frameSize, this.frameSize);
+		renderer.setSize(this.recordParams.frameSize, this.recordParams.frameSize);
 		renderer.gammaOutput = true;
 
 		this.$el.appendChild(renderer.domElement);
@@ -542,8 +542,15 @@ export default {
 				this.recordAllAsSheets('Footman');
 			}
 		}, 'Save As Sheets');
-		this.actionsFolder.add(this.recordParams, 'Frames', 0, 20).step(1).listen();
 		this.actionsFolder.open();
+
+		this.frameSettingsFolder = this.gui.addFolder('Frames');
+		this.frameSettingsFolder.add(this.recordParams, 'frames', 1, 20).step(1).name('Frames').listen();
+		this.frameSettingsFolder.add(this.recordParams, 'frameSize', 32, 1024).step(32).name('Frame Size').listen().onChange((newValue) => {
+			renderer.setSize(newValue, newValue);
+			this.onWindowResize();
+		});
+		this.frameSettingsFolder.add(this.recordParams, 'sheetSize', 64, 16384).step(64).name('Sheet Size').listen();
 
 		const clock = new THREE.Clock();
 
