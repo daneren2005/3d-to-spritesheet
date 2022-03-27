@@ -88,6 +88,7 @@ export default {
 					let animationName = animationNames[j];
 					let { action, frames } = this.animationActions[animationName];
 
+					// eslint-disable-next-line
 					console.log(`Generating ${animationName} animation at angle ${angleName}`);
 					await this.generateFrameFromAnimation(zip, action, frames, `${animationName} ${angleName}`);
 				}
@@ -118,6 +119,7 @@ export default {
 					let animationName = animationNames[j];
 					let { action, frames } = this.animationActions[animationName];
 
+					// eslint-disable-next-line
 					console.log(`Generating ${animationName} animation at angle ${angleName}`);
 					await this.drawFramesFromAnimation(options, action, frames, animationName, angleName);
 				}
