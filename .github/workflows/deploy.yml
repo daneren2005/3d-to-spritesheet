@@ -1,5 +1,8 @@
 name: Build and Deploy
-on: [push]
+on:
+  push:
+    branches:
+      - production
 jobs:
   build-and-deploy:
     concurrency: ci-${{ github.ref }}
@@ -16,5 +19,5 @@ jobs:
       - name: Deploy 🚀
         uses: JamesIves/github-pages-deploy-action@v4.2.5
         with:
-          branch: gh-pages # The branch the action should deploy to.
-          folder: dist # The folder the action should deploy
+          branch: gh-pages
+          folder: dist
