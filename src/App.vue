@@ -317,7 +317,7 @@ export default {
 			manager.addHandler( /\.tga$/i, new TGALoader(manager) );
 			const fbxLoader = new FBXLoader(manager);
 
-			let modelBlobSet = blobs.find(({name}) => name.includes('.fbx') && !name.includes('@'));
+			let modelBlobSet = blobs.find(({name}) => name.toLowerCase().includes('.fbx') && !name.includes('@'));
 			let modelBlob = modelBlobSet.blob;
 			let modelName = modelBlobSet.name;
 			modelBlob = await this.fixModelData(modelBlob);
@@ -362,10 +362,10 @@ export default {
 				this.actionsFolder.remove(this.actionsFolder.__controllers.at(-1));
 			}
 
-			let animationBlobs = blobs.filter(({name}) => name.includes('@') && name.includes('.fbx'));
+			let animationBlobs = blobs.filter(({name}) => name.includes('@') && name.toLowerCase().includes('.fbx'));
 			for(let i = 0; i < animationBlobs.length; i++) {
 				let { name } = animationBlobs[i];
-				let animationName = name.substring(name.indexOf('@') + 1, name.lastIndexOf('.fbx'));
+				let animationName = name.substring(name.indexOf('@') + 1, name.toLowerCase().lastIndexOf('.fbx'));
 				let animationObject = await fbxLoadPromise(fbxLoader, name);
 				let animationAction = this.mixer.clipAction(animationObject.animations[0]);
 
@@ -489,13 +489,13 @@ export default {
 
 		// this.loadModel();
 		this.loadModelFromUrls([
-			'models/ToonRTS_demo_Knight/model.fbx',
+			'models/ToonRTS_demo_Knight/model.FBX',
 			// 'models/archer/WK_SM_Archer_A.FBX',
 			'models/ToonRTS_demo_Knight/DemoTexture.tga',
 			// 'models/archer/WK_Standard_Units.tga',
-			'models/ToonRTS_demo_Knight/model@idle.fbx',
-			'models/ToonRTS_demo_Knight/model@run.fbx',
-			'models/ToonRTS_demo_Knight/model@attack.fbx'
+			'models/ToonRTS_demo_Knight/model@idle.FBX',
+			'models/ToonRTS_demo_Knight/model@run.FBX',
+			'models/ToonRTS_demo_Knight/model@attack.FBX'
 		]);
 
 		window.addEventListener('resize', this.onWindowResize, false);
