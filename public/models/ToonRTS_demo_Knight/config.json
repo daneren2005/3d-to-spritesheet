@@ -1,0 +1,17 @@
+{
+	"model": "models/ToonRTS_demo_Knight/model.FBX",
+	"texture": "models/ToonRTS_demo_Knight/DemoTexture.tga",
+	"animations": {
+		"idle": {
+			"name": "models/ToonRTS_demo_Knight/model@idle.FBX",
+			"frames": 1
+		},
+		"run": {
+			"name": "models/ToonRTS_demo_Knight/model@run.FBX"
+		},
+		"attack": {
+			"name": "models/ToonRTS_demo_Knight/model@attack.FBX",
+			"frames": 8
+		}
+	}
+}
