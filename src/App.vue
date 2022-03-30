@@ -167,7 +167,17 @@ export default {
 		},
 		finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
-				options.zip.file(`${options.modelName}_${options.sheet}.png`, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
+				// If we are printing a single sheet, don't add _index to the names
+				let sheetName = `${options.modelName}_${options.sheet}.png`;
+				if(options.sheet === 0) {
+					sheetName = `${options.modelName}.png`;
+
+					Object.values(options.json).forEach(animationJSON => {
+						animationJSON.sheet = animationJSON.sheet.replace('_0.png', '.png');
+					});
+				}
+
+				options.zip.file(sheetName, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
 			}
 
 			options.zip.file('animations.json', JSON.stringify(options.json, null, '\t'));
@@ -580,12 +590,12 @@ export default {
 		this.actionsFolder = gui.addFolder('Actions');
 		this.actionsFolder.add({
 			'Save As Frames': () => {
-				this.recordAllAsFrames('Footman');
+				this.recordAllAsFrames(this.config.name);
 			}
 		}, 'Save As Frames');
 		this.actionsFolder.add({
 			'Save As Sheets': () => {
-				this.recordAllAsSheets('Footman');
+				this.recordAllAsSheets(this.config.name);
 			}
 		}, 'Save As Sheets');
 		this.actionsFolder.open();

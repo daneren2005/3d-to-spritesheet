@@ -1,4 +1,5 @@
 {
+	"name": "Demo",
 	"model": "models/ToonRTS_demo_Knight/model.FBX",
 	"texture": "models/ToonRTS_demo_Knight/DemoTexture.tga",
 	"animations": {
