@@ -15,25 +15,15 @@ import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import axios from 'axios';
+import defaultConfig from '../public/models/ToonRTS_demo_Knight/config.json';
+import loadDroppedFiles from '@/utils/load-dropped-files';
+import generateAngles from '@/utils/generate-angles';
 
-const MAX_ANGLE = Math.PI / 6;
-
+const DEFAULT_DISTANCE = 1.05;
 export default {
 	data: () => {
-		let angleCount = 16;
-		let angles = {};
-		for(let i = 0; i < angleCount; i++) {
-			let angle = (360 / angleCount) * i;
-			// Can just mirror left/right to save space
-			if(angle > 90 && angle < 270) {
-				continue;
-			}
-
-			let radians = angle * Math.PI / 180;
-			angles[angle] = [-Math.cos(radians) * MAX_ANGLE, 1.05, Math.sin(radians) * MAX_ANGLE];
-		}
-
 		return {
+			config: null,
 			currentModel: null,
 			directionalLight: null,
 			modelReady: false,
@@ -50,9 +40,10 @@ export default {
 			recordParams: {
 				frames: 4,
 				frameSize: 256,
-				sheetSize: 4096
+				sheetSize: 4096,
+				distance: DEFAULT_DISTANCE
 			},
-			angles,
+			angles: generateAngles(DEFAULT_DISTANCE),
 			isRecording: false
 		};
 	},
@@ -176,7 +167,17 @@ export default {
 		},
 		finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
-				options.zip.file(`${options.modelName}_${options.sheet}.png`, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
+				// If we are printing a single sheet, don't add _index to the names
+				let sheetName = `${options.modelName}_${options.sheet}.png`;
+				if(options.sheet === 0) {
+					sheetName = `${options.modelName}.png`;
+
+					Object.values(options.json).forEach(animationJSON => {
+						animationJSON.sheet = animationJSON.sheet.replace('_0.png', '.png');
+					});
+				}
+
+				options.zip.file(sheetName, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
 			}
 
 			options.zip.file('animations.json', JSON.stringify(options.json, null, '\t'));
@@ -289,6 +290,46 @@ export default {
 			this.directionalLight.position.copy(this.camera.position);
 		},
 
+		loadModelFromConfig(config, files = null) {
+			this.config = config;
+			if(config.distance) {
+				this.recordParams.distance = config.distance;
+			} else {
+				this.recordParams.distance = DEFAULT_DISTANCE;
+			}
+			this.angles = generateAngles(this.recordParams.distance);
+
+			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
+			if(files) {
+				let usedFiles = files.filter(file => {
+					return filenames.includes(file.name);
+				});
+				let missingAnimations = Object.keys(config.animations).filter(animationKey => {
+					return !usedFiles.map(file => file.name).includes(config.animations[animationKey].name);
+				});
+				missingAnimations.forEach(missingAnimation => {
+					alert(`Missing animation files for ${missingAnimation}`);
+				});
+
+				this.loadModelFromFiles(usedFiles.map(file => {
+					let animationName = null;
+					Object.keys(config.animations).forEach(animationKey => {
+						let filename = config.animations[animationKey].name;
+						if(file.name === filename) {
+							animationName = animationKey;
+						}
+					});
+
+					return {
+						blob: file,
+						name: file.name.toLowerCase(),
+						animationName
+					};
+				}));
+			} else {
+				this.loadModelFromUrls(filenames);
+			}
+		},
 		async loadModelFromUrls(urls) {
 			let blobs = [];
 			for(let i = 0; i < urls.length; i++) {
@@ -310,6 +351,7 @@ export default {
 				this.scene.remove(this.currentModel);
 				this.currentModel = null;
 			}
+			this.updateAngle('90');
 			this.animationActions = {};
 
 			this.modelReady = false;
@@ -354,6 +396,10 @@ export default {
 			this.modelFolder.add(model.position, 'x', -4, 4).step(0.1).listen();
 			this.modelFolder.add(model.position, 'y', -4, 4).step(0.1).listen();
 			this.modelFolder.add(model.position, 'z', -4, 4).step(0.1).listen();
+			this.modelFolder.add(this.recordParams, 'distance', 0.5, 5).step(0.05).name('Distance').listen().onChange((newValue) => {
+				this.angles = generateAngles(newValue);
+				this.updateAngle('90');
+			});
 
 			while(this.animationsFolder.__controllers.length) {
 				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
@@ -362,10 +408,16 @@ export default {
 				this.actionsFolder.remove(this.actionsFolder.__controllers.at(-1));
 			}
 
-			let animationBlobs = blobs.filter(({name}) => name.includes('@') && name.toLowerCase().includes('.fbx'));
+			let animationBlobs = blobs.filter((blob) => {
+				return blob.name.includes('@') && blob.name.toLowerCase().includes('.fbx')
+					||
+					blob.animationName;
+			});
 			for(let i = 0; i < animationBlobs.length; i++) {
-				let { name } = animationBlobs[i];
-				let animationName = name.substring(name.indexOf('@') + 1, name.toLowerCase().lastIndexOf('.fbx'));
+				let { name, animationName } = animationBlobs[i];
+				if(!animationName) {
+					animationName = name.substring(name.indexOf('@') + 1, name.toLowerCase().lastIndexOf('.fbx'));
+				}
 				let animationObject = await fbxLoadPromise(fbxLoader, name);
 				let animationAction = this.mixer.clipAction(animationObject.animations[0]);
 
@@ -381,10 +433,8 @@ export default {
 				this.actionsFolder.add(recordAnimations, animationName);
 
 				let frames = this.recordParams.frames;
-				if(animationName === 'idle') {
-					frames = 1;
-				} else if(animationName.includes('attack')) {
-					frames = 8;
+				if(this.config.animations[animationName] && this.config.animations[animationName].frames) {
+					frames = this.config.animations[animationName].frames;
 				}
 
 				this.addAnimation(animationName, animationAction, frames);
@@ -427,8 +477,8 @@ export default {
 
 			return new Blob([arrayBuffer]);
 		},
-		droppedFiles(event) {
-			let files = [...event.dataTransfer.files];
+		async droppedFiles(event) {
+			let files = await loadDroppedFiles(event);
 			let modelFile = files.find(file => file.name.toLowerCase().includes('.fbx') && !file.name.includes('@'));
 			let textureFile = files.find(file => file.name.toLowerCase().includes('.tga'));
 			if(!modelFile || !textureFile) {
@@ -436,12 +486,22 @@ export default {
 				return;
 			}
 
-			this.loadModelFromFiles(files.map(file => {
-				return {
-					blob: file,
-					name: file.name.toLowerCase()
+			let configFile = files.find(file => file.name.toLowerCase() === 'config.json');
+			if(configFile) {
+				let reader = new FileReader();
+				reader.onload = (event) => {
+					let config = JSON.parse(event.target.result);
+					this.loadModelFromConfig(config, files);
 				};
-			}));
+				reader.readAsText(configFile);
+			} else {
+				this.loadModelFromFiles(files.map(file => {
+					return {
+						blob: file,
+						name: file.name.toLowerCase()
+					};
+				}));
+			}
 		}
 	},
 	mounted() {
@@ -487,16 +547,7 @@ export default {
 		// controls.autoRotate = true;
 		controls.target.set(0, 0, 0);
 
-		// this.loadModel();
-		this.loadModelFromUrls([
-			'models/ToonRTS_demo_Knight/model.FBX',
-			// 'models/archer/WK_SM_Archer_A.FBX',
-			'models/ToonRTS_demo_Knight/DemoTexture.tga',
-			// 'models/archer/WK_Standard_Units.tga',
-			'models/ToonRTS_demo_Knight/model@idle.FBX',
-			'models/ToonRTS_demo_Knight/model@run.FBX',
-			'models/ToonRTS_demo_Knight/model@attack.FBX'
-		]);
+		this.loadModelFromConfig(defaultConfig);
 
 		window.addEventListener('resize', this.onWindowResize, false);
 		this.onWindowResize();
@@ -539,12 +590,12 @@ export default {
 		this.actionsFolder = gui.addFolder('Actions');
 		this.actionsFolder.add({
 			'Save As Frames': () => {
-				this.recordAllAsFrames('Footman');
+				this.recordAllAsFrames(this.config.name);
 			}
 		}, 'Save As Frames');
 		this.actionsFolder.add({
 			'Save As Sheets': () => {
-				this.recordAllAsSheets('Footman');
+				this.recordAllAsSheets(this.config.name);
 			}
 		}, 'Save As Sheets');
 		this.actionsFolder.open();
