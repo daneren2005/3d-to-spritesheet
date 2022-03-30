@@ -17,24 +17,11 @@ import { saveAs } from 'file-saver';
 import axios from 'axios';
 import defaultConfig from '../public/models/ToonRTS_demo_Knight/config.json';
 import loadDroppedFiles from '@/utils/load-dropped-files';
+import generateAngles from '@/utils/generate-angles';
 
-const MAX_ANGLE = Math.PI / 6;
-
+const DEFAULT_DISTANCE = 1.05;
 export default {
 	data: () => {
-		let angleCount = 16;
-		let angles = {};
-		for(let i = 0; i < angleCount; i++) {
-			let angle = (360 / angleCount) * i;
-			// Can just mirror left/right to save space
-			if(angle > 90 && angle < 270) {
-				continue;
-			}
-
-			let radians = angle * Math.PI / 180;
-			angles[angle] = [-Math.cos(radians) * MAX_ANGLE, 1.05, Math.sin(radians) * MAX_ANGLE];
-		}
-
 		return {
 			config: null,
 			currentModel: null,
@@ -53,9 +40,10 @@ export default {
 			recordParams: {
 				frames: 4,
 				frameSize: 256,
-				sheetSize: 4096
+				sheetSize: 4096,
+				distance: DEFAULT_DISTANCE
 			},
-			angles,
+			angles: generateAngles(DEFAULT_DISTANCE),
 			isRecording: false
 		};
 	},
@@ -294,6 +282,12 @@ export default {
 
 		loadModelFromConfig(config, files = null) {
 			this.config = config;
+			if(config.distance) {
+				this.recordParams.distance = config.distance;
+			} else {
+				this.recordParams.distance = DEFAULT_DISTANCE;
+			}
+			this.angles = generateAngles(this.recordParams.distance);
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(files) {
@@ -347,6 +341,7 @@ export default {
 				this.scene.remove(this.currentModel);
 				this.currentModel = null;
 			}
+			this.updateAngle('90');
 			this.animationActions = {};
 
 			this.modelReady = false;
@@ -391,6 +386,10 @@ export default {
 			this.modelFolder.add(model.position, 'x', -4, 4).step(0.1).listen();
 			this.modelFolder.add(model.position, 'y', -4, 4).step(0.1).listen();
 			this.modelFolder.add(model.position, 'z', -4, 4).step(0.1).listen();
+			this.modelFolder.add(this.recordParams, 'distance', 0.5, 5).step(0.05).name('Distance').listen().onChange((newValue) => {
+				this.angles = generateAngles(newValue);
+				this.updateAngle('90');
+			});
 
 			while(this.animationsFolder.__controllers.length) {
 				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
