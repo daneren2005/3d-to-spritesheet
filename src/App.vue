@@ -608,6 +608,11 @@ export default {
 		});
 		this.frameSettingsFolder.add(this.recordParams, 'sheetSize', 64, 16384).step(64).name('Sheet Size').listen();
 
+		const lightsFolder = gui.addFolder('Lights');
+		lightsFolder.add(light1, 'intensity', 0, 5).name('Ambient Light').step(0.01).listen();
+		lightsFolder.add(light2, 'intensity', 0, 5).name('Directional Light').step(0.01).listen();
+		lightsFolder.add(hemiLight, 'intensity', 0, 5).name('Hemisphere Light').step(0.01).listen();
+
 		const clock = new THREE.Clock();
 
 		const animate = () => {
