@@ -60,6 +60,8 @@ export default {
 				this.activeAction.reset();
 				this.activeAction.fadeIn(1);*/
 				this.activeAction.play();
+			} else {
+				toAction.reset();
 			}
 		},
 
