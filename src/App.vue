@@ -77,11 +77,11 @@ export default {
 
 					this.updateAngle(angleName);
 					let animationName = animationNames[j];
-					let { action, frames } = this.animationActions[animationName];
+					let { action, frames, animationConfig } = this.animationActions[animationName];
 
 					// eslint-disable-next-line
 					console.log(`Generating ${animationName} animation at angle ${angleName}`);
-					await this.generateFrameFromAnimation(zip, action, frames, `${animationName} ${angleName}`);
+					await this.generateFrameFromAnimation(zip, action, frames, `${animationName} ${angleName}`, animationConfig);
 				}
 			}
 
@@ -108,11 +108,11 @@ export default {
 
 					this.updateAngle(angleName);
 					let animationName = animationNames[j];
-					let { action, frames } = this.animationActions[animationName];
+					let { action, frames, animationConfig } = this.animationActions[animationName];
 
 					// eslint-disable-next-line
 					console.log(`Generating ${animationName} animation at angle ${angleName}`);
-					await this.drawFramesFromAnimation(options, action, frames, animationName, angleName);
+					await this.drawFramesFromAnimation(options, action, frames, animationName, angleName, animationConfig);
 				}
 			}
 			this.finishRecordings(options);
@@ -137,8 +137,8 @@ export default {
 				let angleName = angleNames[i];
 				this.updateAngle(angleName);
 
-				let { frames } = this.animationActions[name];
-				await this.drawFramesFromAnimation(options, action, frames, name, angleName);
+				let { frames, animationConfig } = this.animationActions[name];
+				await this.drawFramesFromAnimation(options, action, frames, name, angleName, animationConfig);
 			}
 			this.finishRecordings(options);
 
@@ -183,10 +183,10 @@ export default {
 			options.zip.file('animations.json', JSON.stringify(options.json, null, '\t'));
 		},
 
-		async generateFrameFromAnimation(zip, action, frames, frameName) {
+		async generateFrameFromAnimation(zip, action, frames, frameName, animationConfig) {
 			this.setAction(action);
 
-			let duration = action._clip.duration;
+			let duration = this.getActionDuration(action, animationConfig);
 			const FRAMES = frames || this.recordParams.frames;
 			let skipTime = duration / FRAMES;
 
@@ -200,10 +200,10 @@ export default {
 			}
 			this.isRecording = false;
 		},
-		async drawFramesFromAnimation(options, action, frames, animationName, angle) {
+		async drawFramesFromAnimation(options, action, frames, animationName, angle, animationConfig) {
 			this.setAction(action);
 
-			let duration = action._clip.duration;
+			let duration = this.getActionDuration(action, animationConfig);
 			const FRAMES = frames || this.recordParams.frames;
 			let skipTime = duration / FRAMES;
 			if(FRAMES <= 1) {
@@ -220,6 +220,15 @@ export default {
 			}
 			this.isRecording = false;
 		},
+		getActionDuration(action, animationConfig) {
+			let durationMultiplier = 1;
+			if(animationConfig && animationConfig.skipEnd) {
+				durationMultiplier = 1 - animationConfig.skipEnd;
+			}
+
+			return action._clip.duration * durationMultiplier;
+		},
+
 		async drawFrameFromAnimation(options, animationName, angle) {
 			options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
 			
@@ -278,10 +287,11 @@ export default {
 			this.renderer.domElement.style.transform = `scale(${scale})`;
 		},
 
-		addAnimation(name, action, frames = 4) {
+		addAnimation(name, action, frames, animationConfig) {
 			this.animationActions[name] = {
 				frames,
-				action
+				action,
+				animationConfig
 			};
 		},
 		updateAngle(angleName) {
@@ -433,11 +443,15 @@ export default {
 				this.actionsFolder.add(recordAnimations, animationName);
 
 				let frames = this.recordParams.frames;
-				if(this.config.animations[animationName] && this.config.animations[animationName].frames) {
-					frames = this.config.animations[animationName].frames;
+				let animationConfig = null;
+				if(this.config.animations[animationName]) {
+					if(this.config.animations[animationName].frames) {
+						frames = this.config.animations[animationName].frames;
+					}
+					animationConfig = this.config.animations[animationName];
 				}
 
-				this.addAnimation(animationName, animationAction, frames);
+				this.addAnimation(animationName, animationAction, frames, animationConfig);
 			}
 
 			this.modelReady = true;

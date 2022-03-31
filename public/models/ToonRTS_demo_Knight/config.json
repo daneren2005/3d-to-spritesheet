@@ -12,7 +12,8 @@
 		},
 		"attack": {
 			"name": "models/ToonRTS_demo_Knight/model@attack.FBX",
-			"frames": 8
+			"frames": 8,
+			"skipEnd": 0.4
 		}
 	}
 }
