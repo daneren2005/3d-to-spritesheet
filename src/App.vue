@@ -18,6 +18,7 @@ import axios from 'axios';
 import defaultConfig from '../public/models/ToonRTS_demo_Knight/config.json';
 import loadDroppedFiles from '@/utils/load-dropped-files';
 import generateAngles from '@/utils/generate-angles';
+import pngquant from '@/utils/pngquant';
 
 const DEFAULT_DISTANCE = 1.05;
 export default {
@@ -41,7 +42,8 @@ export default {
 				frames: 4,
 				frameSize: 256,
 				sheetSize: 4096,
-				distance: DEFAULT_DISTANCE
+				distance: DEFAULT_DISTANCE,
+				compressPNG: true
 			},
 			angles: generateAngles(DEFAULT_DISTANCE),
 			isRecording: false
@@ -117,7 +119,7 @@ export default {
 					await this.drawFramesFromAnimation(options, action, frames, animationName, angleName, animationConfig);
 				}
 			}
-			this.finishRecordings(options);
+			await this.finishRecordings(options);
 
 			options.zip.generateAsync({
 				type: 'blob',
@@ -142,7 +144,7 @@ export default {
 				let { frames, animationConfig } = this.animationActions[name];
 				await this.drawFramesFromAnimation(options, action, frames, name, angleName, animationConfig);
 			}
-			this.finishRecordings(options);
+			await this.finishRecordings(options);
 
 			options.zip.generateAsync({
 				type: 'blob'
@@ -167,7 +169,7 @@ export default {
 				modelName
 			};
 		},
-		finishRecordings(options) {
+		async finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
 				// If we are printing a single sheet, don't add _index to the names
 				let sheetName = `${options.modelName}_${options.sheet}.png`;
@@ -179,7 +181,7 @@ export default {
 					});
 				}
 
-				options.zip.file(sheetName, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
+				await this.saveImageToZip(options, sheetName);
 			}
 
 			options.zip.file('animations.json', JSON.stringify(options.json, null, '\t'));
@@ -215,7 +217,7 @@ export default {
 			this.isRecording = true;
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
-				this.drawFrameFromAnimation(options, animationName, angle);
+				await this.drawFrameFromAnimation(options, animationName, angle);
 
 				this.mixer.update(skipTime);
 				await raf();
@@ -266,7 +268,7 @@ export default {
 				options.row++;
 
 				if(options.row >= maxSize) {
-					options.zip.file(`${options.modelName}_${options.sheet}.png`, options.canvas.toDataURL('image/png').replace('data:image/png;base64,', ''), { base64: true });
+					await this.saveImageToZip(options, `${options.modelName}_${options.sheet}.png`);
 
 					options.row = 0;
 					let canvas = document.createElement('canvas');
@@ -277,6 +279,36 @@ export default {
 					options.sheet++;
 				}
 			}
+		},
+		async saveImageToZip(options, sheetName) {
+			let imgDataUrl = options.canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
+			let outputData = imgDataUrl;
+
+			// TODO: This needs some sort of loading indicator - for now we just pause animation to make it a little more obvious something is happening
+			if(this.recordParams.compressPNG) {
+				this.isRecording = true;
+				let binaryString = window.atob(imgDataUrl);
+				let inputByteArray = new Uint8Array(binaryString.length);
+				for(let i = 0; i < binaryString.length; i++) {
+					inputByteArray[i] = binaryString.charCodeAt(i);
+				}
+
+				try {
+					let outputByteArray = await pngquant(inputByteArray, {
+						quality: '10-100',
+						speed: '4'
+					});
+
+					outputData = outputByteArray;
+				} catch(e) {
+					alert(`Failed to run pngquant on image ${sheetName}`);
+					throw e;
+				} finally {
+					this.isRecording = false;
+				}
+			}
+
+			options.zip.file(sheetName, outputData, { base64: true });
 		},
 		getPNGDataUrl() {
 			return this.renderer.domElement.toDataURL('image/png');
@@ -623,6 +655,7 @@ export default {
 			this.onWindowResize();
 		});
 		this.frameSettingsFolder.add(this.recordParams, 'sheetSize', 64, 16384).step(64).name('Sheet Size').listen();
+		this.frameSettingsFolder.add(this.recordParams, 'compressPNG').name('Compress PNG').listen();
 
 		const lightsFolder = gui.addFolder('Lights');
 		lightsFolder.add(light1, 'intensity', 0, 5).name('Ambient Light').step(0.01).listen();
