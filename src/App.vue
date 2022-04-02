@@ -104,15 +104,25 @@ export default {
 				return parseInt(a) - parseInt(b);
 			});
 			let animationNames = Object.keys(this.animationActions);
+			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
 
 			let options = this.initRecordings(name);
 			for(let j = 0; j < animationNames.length; j++) {
+				let animationName = animationNames[j];
+				let { action, frames, animationConfig } = this.animationActions[animationName];
+
+				let rowsLeft = (maxSize - 1) - options.row;
+				let cellsLeft = rowsLeft * maxSize + (maxSize - 1 - options.column); 
+				let neededSlots = frames * angleNames.length;
+				if(neededSlots > cellsLeft) {
+					console.warn(`skipping to next sheet since we need ${neededSlots} slots with ${cellsLeft} left`);
+					await this.startNewSheet(options);
+				}
+
 				for(let i = 0; i < angleNames.length; i++) {
 					let angleName = angleNames[i];
 
 					this.updateAngle(angleName);
-					let animationName = animationNames[j];
-					let { action, frames, animationConfig } = this.animationActions[animationName];
 
 					// eslint-disable-next-line
 					console.log(`Generating ${animationName} animation at angle ${angleName}`);
@@ -124,9 +134,7 @@ export default {
 			options.zip.generateAsync({
 				type: 'blob',
 				streamFiles: true
-			}/*, (metadata) => {
-				console.log('update: ', metadata);
-			}*/).then((content) => {
+			}).then((content) => {
 				saveAs(content, `${name}.zip`);
 			});
 		},
@@ -172,12 +180,12 @@ export default {
 		async finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
 				// If we are printing a single sheet, don't add _index to the names
-				let sheetName = `${options.modelName}_${options.sheet}.png`;
+				let sheetName = `${options.modelName}${options.sheet}.png`;
 				if(options.sheet === 0) {
 					sheetName = `${options.modelName}.png`;
 
 					Object.values(options.json).forEach(animationJSON => {
-						animationJSON.sheet = animationJSON.sheet.replace('_0.png', '.png');
+						animationJSON.sheet = animationJSON.sheet.replace('0.png', '.png');
 					});
 				}
 
@@ -195,6 +203,8 @@ export default {
 			let skipTime = duration / FRAMES;
 
 			this.isRecording = true;
+			// 0 update seems to fix some models starting out different than it should - peasant starts out holding gold and wood even though a 0ms update shows him starting to swing a pickaxe
+			this.mixer.update(0);
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
 				zip.file(`${frameName} ${i + 1}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
@@ -215,6 +225,8 @@ export default {
 			}
 
 			this.isRecording = true;
+			// 0 update seems to fix some models starting out different than it should - peasant starts out holding gold and wood even though a 0ms update shows him starting to swing a pickaxe
+			this.mixer.update(0);
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
 				await this.drawFrameFromAnimation(options, animationName, angle);
@@ -239,7 +251,7 @@ export default {
 			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
 			if(!options.json[animationName]) {
 				options.json[animationName] = {
-					sheet: `${options.modelName}_${options.sheet}.png`,
+					sheet: `${options.modelName}${options.sheet}.png`,
 					directions: {}
 				};
 			}
@@ -268,15 +280,7 @@ export default {
 				options.row++;
 
 				if(options.row >= maxSize) {
-					await this.saveImageToZip(options, `${options.modelName}_${options.sheet}.png`);
-
-					options.row = 0;
-					let canvas = document.createElement('canvas');
-					canvas.width = this.recordParams.sheetSize;
-					canvas.height = this.recordParams.sheetSize;
-					options.canvas = canvas;
-					options.ctx = canvas.getContext('2d');
-					options.sheet++;
+					await this.startNewSheet(options);
 				}
 			}
 		},
@@ -310,6 +314,18 @@ export default {
 
 			options.zip.file(sheetName, outputData, { base64: true });
 		},
+		async startNewSheet(options) {
+			await this.saveImageToZip(options, `${options.modelName}${options.sheet}.png`);
+
+			options.row = 0;
+			options.column = 0;
+			let canvas = document.createElement('canvas');
+			canvas.width = this.recordParams.sheetSize;
+			canvas.height = this.recordParams.sheetSize;
+			options.canvas = canvas;
+			options.ctx = canvas.getContext('2d');
+			options.sheet++;
+		},
 		getPNGDataUrl() {
 			return this.renderer.domElement.toDataURL('image/png');
 		},
@@ -342,6 +358,14 @@ export default {
 				this.recordParams.distance = DEFAULT_DISTANCE;
 			}
 			this.angles = generateAngles(this.recordParams.distance);
+			if(config.sheetSize) {
+				this.recordParams.sheetSize = config.sheetSize;
+			}
+			if(config.frameSize) {
+				this.recordParams.frameSize = config.frameSize;
+				this.renderer.setSize(config.frameSize, config.frameSize);
+				this.onWindowResize();
+			}
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(files) {
