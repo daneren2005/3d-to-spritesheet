@@ -361,7 +361,7 @@ export default {
 			} else {
 				this.recordParams.distance = DEFAULT_DISTANCE;
 			}
-			this.angles = generateAngles(this.recordParams.distance);
+			this.angles = generateAngles(this.recordParams.distance, config);
 			if(config.sheetSize) {
 				this.recordParams.sheetSize = config.sheetSize;
 			}

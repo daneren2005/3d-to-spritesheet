@@ -18,6 +18,10 @@
 	},
 	"icon": {
 		"animation": "idle",
-		"size": 512
+		"size": 512,
+		"camera": {
+			"position": [0, 0.54, 0.29],
+			"target": [0, 0.5, 0]
+		}
 	}
 }
