@@ -12,7 +12,16 @@
 		},
 		"attack": {
 			"name": "models/ToonRTS_demo_Knight/model@attack.FBX",
-			"frames": 8
+			"frames": 8,
+			"skipEnd": 0.4
+		}
+	},
+	"icon": {
+		"animation": "idle",
+		"size": 512,
+		"camera": {
+			"position": [0, 0.54, 0.29],
+			"target": [0, 0.5, 0]
 		}
 	}
 }
