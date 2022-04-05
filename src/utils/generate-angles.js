@@ -18,8 +18,11 @@ export default function generateAngles(distance) {
 	return {
 		spritesheet: angles,
 		icon: {
-			position: [0, halfDistance, halfDistance],
-			target: [-0.1, 0.3, 0]
+			/*position: [0, halfDistance, halfDistance],
+			target: [-0.03, 0.26, 0]*/
+
+			position: [0, halfDistance, halfDistance / 3],
+			target: [0, 0.5, 0]
 		}
 	};
 }
