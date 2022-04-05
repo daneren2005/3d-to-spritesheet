@@ -15,5 +15,11 @@ export default function generateAngles(distance) {
 		angles[angle] = [-Math.cos(radians) * halfDistance, distance, Math.sin(radians) * halfDistance];
 	}
 
-	return angles;
+	return {
+		spritesheet: angles,
+		icon: {
+			position: [0, halfDistance, halfDistance],
+			target: [-0.1, 0.3, 0]
+		}
+	};
 }

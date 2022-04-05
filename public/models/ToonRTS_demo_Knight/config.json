@@ -15,5 +15,9 @@
 			"frames": 8,
 			"skipEnd": 0.4
 		}
+	},
+	"icon": {
+		"animation": "idle",
+		"size": 512
 	}
 }

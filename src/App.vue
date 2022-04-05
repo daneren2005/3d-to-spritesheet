@@ -21,6 +21,7 @@ import generateAngles from '@/utils/generate-angles';
 import pngquant from '@/utils/pngquant';
 
 const DEFAULT_DISTANCE = 1.05;
+const DEFAULT_FRAME_SIZE = 256;
 export default {
 	data: () => {
 		return {
@@ -40,7 +41,7 @@ export default {
 			actionsFolder: null,
 			recordParams: {
 				frames: 4,
-				frameSize: 256,
+				frameSize: DEFAULT_FRAME_SIZE,
 				sheetSize: 4096,
 				distance: DEFAULT_DISTANCE,
 				compressPNG: true
@@ -67,39 +68,8 @@ export default {
 			}
 		},
 
-		async recordAllAsFrames(name = 'test') {
-			let angleNames = Object.keys(this.angles);
-			angleNames.sort((a, b) => {
-				return parseInt(a) - parseInt(b);
-			});
-			let animationNames = Object.keys(this.animationActions);
-
-			let zip = new JSZip();
-			for(let j = 0; j < animationNames.length; j++) {
-				for(let i = 0; i < angleNames.length; i++) {
-					let angleName = angleNames[i];
-
-					this.updateAngle(angleName);
-					let animationName = animationNames[j];
-					let { action, frames, animationConfig } = this.animationActions[animationName];
-
-					// eslint-disable-next-line
-					console.log(`Generating ${animationName} animation at angle ${angleName}`);
-					await this.generateFrameFromAnimation(zip, action, frames, `${animationName} ${angleName}`, animationConfig);
-				}
-			}
-
-			zip.generateAsync({
-				type: 'blob',
-				streamFiles: true
-			}/*, (metadata) => {
-				console.log('update: ', metadata);
-			}*/).then((content) => {
-				saveAs(content, `${name}.zip`);
-			});
-		},
-		async recordAllAsSheets(name = 'test') {
-			let angleNames = Object.keys(this.angles);
+		async recordAllAsSheets(name) {
+			let angleNames = Object.keys(this.angles.spritesheet);
 			angleNames.sort((a, b) => {
 				return parseInt(a) - parseInt(b);
 			});
@@ -109,7 +79,7 @@ export default {
 			let options = this.initRecordings(name);
 			for(let j = 0; j < animationNames.length; j++) {
 				let animationName = animationNames[j];
-				let { action, frames, animationConfig } = this.animationActions[animationName];
+				let { frames } = this.animationActions[animationName];
 
 				let rowsLeft = (maxSize - 1) - options.row;
 				let cellsLeft = rowsLeft * maxSize + (maxSize - 1 - options.column); 
@@ -119,17 +89,18 @@ export default {
 					await this.startNewSheet(options);
 				}
 
-				for(let i = 0; i < angleNames.length; i++) {
-					let angleName = angleNames[i];
-
-					this.updateAngle(angleName);
-
-					// eslint-disable-next-line
-					console.log(`Generating ${animationName} animation at angle ${angleName}`);
-					await this.drawFramesFromAnimation(options, action, frames, animationName, angleName, animationConfig);
-				}
+				await this.drawFramesFromAnimation(animationName, options);
 			}
 			await this.finishRecordings(options);
+
+			if(this.config.icon) {
+				this.setRenderSize(this.config.icon.size);
+				this.resetSheetCanvas(options);
+				options.canvas.width = this.config.icon.size;
+				options.canvas.height = this.config.icon.size;
+				await this.drawFramesFromAnimation('icon', options);
+				await this.saveImageToZip(options, 'icon.png');
+			}
 
 			options.zip.generateAsync({
 				type: 'blob',
@@ -138,20 +109,9 @@ export default {
 				saveAs(content, `${name}.zip`);
 			});
 		},
-		async recordAnimation(action, name = 'test') {
+		async recordAnimationAsSheet(name) {
 			let options = this.initRecordings(name);
-
-			let angleNames = Object.keys(this.angles);
-			angleNames.sort((a, b) => {
-				return parseInt(a) - parseInt(b);
-			});
-			for(let i = 0; i < angleNames.length; i++) {
-				let angleName = angleNames[i];
-				this.updateAngle(angleName);
-
-				let { frames, animationConfig } = this.animationActions[name];
-				await this.drawFramesFromAnimation(options, action, frames, name, angleName, animationConfig);
-			}
+			await this.drawFramesFromAnimation(name, options);
 			await this.finishRecordings(options);
 
 			options.zip.generateAsync({
@@ -160,10 +120,22 @@ export default {
 				saveAs(content, `${name}.zip`);
 			});
 		},
+
+		
+
 		initRecordings(modelName) {
 			let canvas = document.createElement('canvas');
-			canvas.width = this.recordParams.sheetSize;
-			canvas.height = this.recordParams.sheetSize;
+			if(modelName === 'icon') {
+				canvas.width = this.config.icon.size;
+				canvas.height = this.config.icon.size;
+				this.setRenderSize(this.config.icon.size);
+			} else {
+				canvas.width = this.recordParams.sheetSize;
+				canvas.height = this.recordParams.sheetSize;
+
+				let size = this.config.frameSize || DEFAULT_FRAME_SIZE;
+				this.setRenderSize(size);
+			}
 			let ctx = canvas.getContext('2d');
 
 			return {
@@ -195,26 +167,29 @@ export default {
 			options.zip.file('animations.json', JSON.stringify(options.json, null, '\t'));
 		},
 
-		async generateFrameFromAnimation(zip, action, frames, frameName, animationConfig) {
-			this.setAction(action);
+		async drawFramesFromAnimation(name, options) {
+			if(name === 'icon') {
+				this.updateAngle('icon');
 
-			let duration = this.getActionDuration(action, animationConfig);
-			const FRAMES = frames || this.recordParams.frames;
-			let skipTime = duration / FRAMES;
+				let animationName = this.config.icon.animation;
+				let { action, frames, animationConfig } = this.animationActions[animationName];
+				await this.drawFramesFromAnimationAngle(options, action, frames, name, 'icon', animationConfig);
+			} else {
+				let angleNames = Object.keys(this.angles.spritesheet);
+				angleNames.sort((a, b) => {
+					return parseInt(a) - parseInt(b);
+				});
 
-			this.isRecording = true;
-			// 0 update seems to fix some models starting out different than it should - peasant starts out holding gold and wood even though a 0ms update shows him starting to swing a pickaxe
-			this.mixer.update(0);
-			await raf();
-			for(let i = 0; i < FRAMES; i++) {
-				zip.file(`${frameName} ${i + 1}.png`, this.getPNGDataUrl().replace('data:image/png;base64,', ''), { base64: true });
+				let { action, frames, animationConfig } = this.animationActions[name];
+				for(let i = 0; i < angleNames.length; i++) {
+					let angleName = angleNames[i];
+					this.updateAngle(angleName);
 
-				this.mixer.update(skipTime);
-				await raf();
+					await this.drawFramesFromAnimationAngle(options, action, frames, name, angleName, animationConfig);
+				}
 			}
-			this.isRecording = false;
 		},
-		async drawFramesFromAnimation(options, action, frames, animationName, angle, animationConfig) {
+		async drawFramesFromAnimationAngle(options, action, frames, animationName, angle, animationConfig) {
 			this.setAction(action);
 
 			let duration = this.getActionDuration(action, animationConfig);
@@ -316,7 +291,10 @@ export default {
 		},
 		async startNewSheet(options) {
 			await this.saveImageToZip(options, `${options.modelName}${options.sheet}.png`);
-
+			this.resetSheetCanvas(options);
+			options.sheet++;
+		},
+		resetSheetCanvas(options) {
 			options.row = 0;
 			options.column = 0;
 			let canvas = document.createElement('canvas');
@@ -324,7 +302,6 @@ export default {
 			canvas.height = this.recordParams.sheetSize;
 			options.canvas = canvas;
 			options.ctx = canvas.getContext('2d');
-			options.sheet++;
 		},
 		getPNGDataUrl() {
 			return this.renderer.domElement.toDataURL('image/png');
@@ -345,9 +322,36 @@ export default {
 			};
 		},
 		updateAngle(angleName) {
-			let angles = this.angles[angleName];
-			this.camera.position.set(...angles);
+			let angles = this.angles.spritesheet[angleName] || this.angles[angleName];
+			if(angles.position) {
+				this.camera.position.set(...angles.position);
+				this.controls.target.set(...angles.target);
+			} else {
+				this.camera.position.set(...angles);
+			}
+
 			this.directionalLight.position.copy(this.camera.position);
+
+			if(this.config) {
+				let angleConfig = this.config.animations[angleName] || this.config[angleName];
+				if(angleConfig && angleConfig.size) {
+					this.setRenderSize(angleConfig.size);
+				} else {
+					let size = this.config.frameSize || DEFAULT_FRAME_SIZE;
+					this.setRenderSize(size);
+				}
+			}
+		},
+		setRenderSize(size) {
+			if(this.lastRenderSize == size) {
+				return;
+			}
+
+			this.recordParams.frameSize = size;
+			this.renderer.setSize(size, size);
+			this.onWindowResize();
+
+			this.lastRenderSize = size;
 		},
 
 		loadModelFromConfig(config, files = null) {
@@ -362,9 +366,7 @@ export default {
 				this.recordParams.sheetSize = config.sheetSize;
 			}
 			if(config.frameSize) {
-				this.recordParams.frameSize = config.frameSize;
-				this.renderer.setSize(config.frameSize, config.frameSize);
-				this.onWindowResize();
+				this.setRenderSize(config.frameSize);
 			}
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
@@ -472,7 +474,7 @@ export default {
 			while(this.animationsFolder.__controllers.length) {
 				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
 			}
-			while(this.actionsFolder.__controllers.length > 3) {
+			while(this.actionsFolder.__controllers.length >= 3) {
 				this.actionsFolder.remove(this.actionsFolder.__controllers.at(-1));
 			}
 
@@ -496,7 +498,7 @@ export default {
 				this.animationsFolder.add(animations, animationName);
 
 				recordAnimations[animationName] = () => {
-					this.recordAnimation(animationAction, animationName);
+					this.recordAnimationAsSheet(animationName);
 				};
 				this.actionsFolder.add(recordAnimations, animationName);
 
@@ -510,6 +512,13 @@ export default {
 				}
 
 				this.addAnimation(animationName, animationAction, frames, animationConfig);
+			}
+
+			if(this.config.icon) {
+				recordAnimations.icon = () => {
+					this.recordAnimationAsSheet('icon');
+				};
+				this.actionsFolder.add(recordAnimations, 'icon');
 			}
 
 			this.modelReady = true;
@@ -614,7 +623,7 @@ export default {
 		this.$el.appendChild(renderer.domElement);
 
 		// Gives mouse movement/rotation/zoom handlers
-		const controls = new OrbitControls(camera, renderer.domElement);
+		const controls = this.controls = new OrbitControls(camera, renderer.domElement);
 		controls.enableDamping = true;
 		// controls.autoRotate = true;
 		controls.target.set(0, 0, 0);
@@ -643,12 +652,15 @@ export default {
 		cameraFolder.add(camera.rotation, 'x', -4, 4).name('Rotation x').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'y', -4, 4).name('Rotation y').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'z', -4, 4).name('Rotation z').step(0.01).listen();
+		cameraFolder.add(controls.target, 'x', -4, 4).name('Target x').step(0.01).listen();
+		cameraFolder.add(controls.target, 'y', -4, 4).name('Target y').step(0.01).listen();
+		cameraFolder.add(controls.target, 'z', -4, 4).name('Target z').step(0.01).listen();
 		// cameraFolder.open();
 
 		const anglesFolder = gui.addFolder('Angles');
 		let angleUpdater = {};
 
-		let angleNames = Object.keys(this.angles);
+		let angleNames = Object.keys(this.angles.spritesheet);
 		angleNames.sort((a, b) => {
 			return parseInt(a) - parseInt(b);
 		});
@@ -658,13 +670,12 @@ export default {
 			};
 			anglesFolder.add(angleUpdater, angleName);
 		});
+		angleUpdater.icon = () => {
+			this.updateAngle('icon');
+		};
+		anglesFolder.add(angleUpdater, 'icon');
 
 		this.actionsFolder = gui.addFolder('Actions');
-		this.actionsFolder.add({
-			'Save As Frames': () => {
-				this.recordAllAsFrames(this.config.name);
-			}
-		}, 'Save As Frames');
 		this.actionsFolder.add({
 			'Save As Sheets': () => {
 				this.recordAllAsSheets(this.config.name);
