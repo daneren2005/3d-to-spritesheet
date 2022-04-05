@@ -474,7 +474,7 @@ export default {
 			while(this.animationsFolder.__controllers.length) {
 				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
 			}
-			while(this.actionsFolder.__controllers.length >= 3) {
+			while(this.actionsFolder.__controllers.length >= 2) {
 				this.actionsFolder.remove(this.actionsFolder.__controllers.at(-1));
 			}
 
