@@ -1,33 +1,50 @@
-const ANGLES_COUNT = 16;
+export default function generateAngles(modelDimensions, config, recordParams) {
+	let distanceMultiplier = recordParams.distance || 1;
+	let distance = Math.max(modelDimensions.x, modelDimensions.y, modelDimensions.z) * distanceMultiplier;
 
-export default function generateAngles(distance, config) {
-	let halfDistance = distance / 2;
-
-	let angles = {};
-	for(let i = 0; i < ANGLES_COUNT; i++) {
-		let angle = (360 / ANGLES_COUNT) * i;
-		// Can just mirror left/right to save space
-		if(angle > 90 && angle < 270) {
-			continue;
-		}
-
-		let radians = angle * Math.PI / 180;
-		angles[angle] = [-Math.cos(radians) * halfDistance, distance, Math.sin(radians) * halfDistance];
-	}
+	let baseAngle = angleToRadians(90);
+	let viewAngle = angleToRadians(recordParams.viewAngle);
 
 	let iconParams = {
-		/*position: [0, halfDistance, halfDistance],
-		target: [-0.03, 0.26, 0]*/
-
-		position: [0, halfDistance, halfDistance / 3],
-		target: [0, 0.5, 0]
+		position: getSphereAngle(distance * 0.25, {
+			x: modelDimensions.x,
+			y: modelDimensions.y * 1.6,
+			z: modelDimensions.z
+		}, baseAngle, 0),
+		target: [0, (modelDimensions.y / 2) * 1.6, 0],
+		startAngle: 270
 	};
 	if(config && config.icon && config.icon.camera) {
-		iconParams = config.icon.camera;
+		iconParams = {
+			...iconParams,
+			...config.icon.camera
+		};
 	}
 
 	return {
-		spritesheet: angles,
+		spritesheet: {
+			position: getSphereAngle(distance, modelDimensions, baseAngle, viewAngle),
+			target: [0, modelDimensions.y / 2, 0]
+		},
 		icon: iconParams
 	};
+}
+
+export function angleToRadians(angle) {
+	if(typeof(angle) === 'string') {
+		angle = parseFloat(angle);
+	}
+	if(isNaN(angle)) {
+		angle = 90;
+	}
+
+	return angle * Math.PI / 180;
+}
+
+function getSphereAngle(distance, modelDimensions, baseAngle, viewAngle) {
+	let x = -distance * Math.cos(baseAngle) * Math.sin(viewAngle);
+	let y = (modelDimensions.y / 2) + distance * Math.sin(viewAngle);
+	let z = distance * Math.sin(baseAngle) * Math.cos(viewAngle);
+
+	return [x, y, z];
 }
