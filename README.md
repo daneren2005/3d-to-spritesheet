@@ -25,11 +25,13 @@ You need to include the base model, texture, and any animations to be rendered. 
 			"name": "model@attack.FBX",
 			"frames": 8
 		}
-	}
+	},
+	"frameSize": 128,
+	"sheetSize": 2048
 }
 ```
 
-You can view each of the loaded animations from the animations tab.  You can generate individual animation frames or an entire spritesheet all at once for all animations from the Actions tab.  Defaults to 4 frames per animation and 256px frames on a 4096px sheet These options can be configured in the Frames tab.
+You can view each of the loaded animations from the animations tab.  You can generate individual animation frames or an entire spritesheet all at once for all animations from the Actions tab.  Defaults to 4 frames per animation and 256px frames on a 4096px sheet These options can be configured in the Frames tab or in the config file.
 
 Te view angle defaults to 60 degrees, and can be configured with `"viewAngle": 45`.  The distance defaults to 1.25x the models size away, and can be configured with `"distance": 1.5`.  Both of these can be played with on the Models tab to see what the optimal settings are.
 
