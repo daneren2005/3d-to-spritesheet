@@ -5,14 +5,19 @@
 	"animations": {
 		"idle": {
 			"name": "models/ToonRTS_demo_Knight/model@idle.FBX",
-			"frames": 1
+			"frames": 4
+		},
+		"walk": {
+			"name": "models/ToonRTS_demo_Knight/model@run.FBX",
+			"frames": 12
 		},
 		"run": {
-			"name": "models/ToonRTS_demo_Knight/model@run.FBX"
+			"name": "models/ToonRTS_demo_Knight/model@run.FBX",
+			"frames": 12
 		},
 		"attack": {
 			"name": "models/ToonRTS_demo_Knight/model@attack.FBX",
-			"frames": 8,
+			"frames": 12,
 			"skipEnd": 0.4
 		}
 	},
