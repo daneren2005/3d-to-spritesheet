@@ -33,7 +33,7 @@ You need to include the base model, texture, and any animations to be rendered. 
 
 You can view each of the loaded animations from the animations tab.  You can generate individual animation frames or an entire spritesheet all at once for all animations from the Actions tab.  Defaults to 4 frames per animation and 256px frames on a 4096px sheet These options can be configured in the Frames tab or in the config file.
 
-Te view angle defaults to 60 degrees, and can be configured with `"viewAngle": 45`.  The distance defaults to 1.25x the models size away, and can be configured with `"distance": 1.5`.  Both of these can be played with on the Models tab to see what the optimal settings are.
+The view angle defaults to 60 degrees, and can be configured with `"viewAngle": 45`.  The distance defaults to 1.25x the models size away, and can be configured with `"distance": 1.5`.  Both of these can be played with on the Models tab to see what the optimal settings are.  The number of angles generated for each animation defaults to 16 (seems to give pretty close to real 3d movement), but can be configured with `"anglesCount": 8`.
 
 View at https://daneren2005.github.io/3d-to-spritesheet/
 
