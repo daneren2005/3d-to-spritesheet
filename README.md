@@ -2,6 +2,9 @@
 Convert FBX 3D models to 9-directional 2D spritesheets.  Only tested with a few FBX models, so others will probably need additional work.  Works by dragging a group of files onto the page to load a new model.  There is also an option to open the folder directly and save without requiring you to download a zip of files.  Only right poses are generated since you can just flip during render to get a left version.
 
 ![Screenshot](https://github.com/daneren2005/3d-to-spritesheet/blob/dev/readme/demo-preview.png?raw=true)
+
+An example sheet generated from this:
+
 ![Spritesheet](https://github.com/daneren2005/3d-to-spritesheet/blob/dev/readme/demo-spritesheet.png?raw=true)
 
 You need to include the base model, texture, and any animations to be rendered.  The animation models need to be named `model@animation.fbx` in order to work correctly.  You can also include a `config.json` with details about which files are being added and how many frames are rendered per animation:
