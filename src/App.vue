@@ -50,7 +50,8 @@ export default {
 			angles: null,
 			angleNames: null,
 			anglesFolder: null,
-			isRecording: false
+			isRecording: false,
+			directoryHandle: null
 		};
 	},
 	methods: {
@@ -102,23 +103,14 @@ export default {
 				await this.saveImageToZip(options, 'icon.png');
 			}
 
-			options.zip.generateAsync({
-				type: 'blob',
-				streamFiles: true
-			}).then((content) => {
-				saveAs(content, `${name}.zip`);
-			});
+			options.finishWriting();
 		},
 		async recordAnimationAsSheet(name) {
 			let options = this.initRecordings(name);
 			await this.drawFramesFromAnimation(name, options);
 			await this.finishRecordings(options);
 
-			options.zip.generateAsync({
-				type: 'blob'
-			}).then((content) => {
-				saveAs(content, `${name}.zip`);
-			});
+			options.finishWriting();
 		},
 
 		
@@ -138,8 +130,7 @@ export default {
 			}
 			let ctx = canvas.getContext('2d');
 
-			return {
-				zip: new JSZip(),
+			let options = {
 				canvas,
 				ctx,
 				row: 0,
@@ -148,6 +139,53 @@ export default {
 				json: {},
 				modelName
 			};
+
+			if(this.directoryHandle) {
+				options.saveFile = async (name, contents, options = {}) => {
+					if(options.base64) {
+						let byteArray;
+
+						// This is coming from canvas
+						if(typeof contents === 'string') {
+							let byteCharacters = window.atob(contents);
+							const byteNumbers = new Array(byteCharacters.length);
+							for(let i = 0; i < byteCharacters.length; i++) {
+								byteNumbers[i] = byteCharacters.charCodeAt(i);
+							}
+							byteArray = new Uint8Array(byteNumbers);
+						}
+						// This is coming from pgquant
+						else {
+							byteArray = contents;
+						}
+						contents = new Blob([byteArray], {type: 'image/png'});
+					}
+					let fileHandle = await this.directoryHandle.getFileHandle(name, { create: true });
+					let writableHandle = await fileHandle.createWritable();
+					await writableHandle.write(contents);
+					await writableHandle.close();
+				};
+				// Don't need to do anything
+				options.finishWriting = () => {
+					alert('done writing files');
+				};
+			} else {
+				let zip = new JSZip();
+
+				options.saveFile = async (name, contents, options) => {
+					zip.file(name, contents, options);
+				};
+				options.finishWriting = () => {
+					zip.generateAsync({
+						type: 'blob',
+						streamFiles: true
+					}).then((content) => {
+						saveAs(content, `${modelName}.zip`);
+					});
+				};
+			}
+
+			return options;
 		},
 		async finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
@@ -164,7 +202,7 @@ export default {
 				await this.saveImageToZip(options, sheetName);
 			}
 
-			options.zip.file('animations.json', JSON.stringify(options.json, null, '\t'));
+			await options.saveFile('animations.json', JSON.stringify(options.json, null, '\t'));
 		},
 
 		async drawFramesFromAnimation(name, options) {
@@ -283,7 +321,7 @@ export default {
 				}
 			}
 
-			options.zip.file(sheetName, outputData, { base64: true });
+			await options.saveFile(sheetName, outputData, { base64: true });
 		},
 		async startNewSheet(options) {
 			await this.saveImageToZip(options, `${options.modelName}${options.sheet}.png`);
@@ -513,7 +551,7 @@ export default {
 			while(this.animationsFolder.__controllers.length) {
 				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
 			}
-			while(this.actionsFolder.__controllers.length >= 2) {
+			while(this.actionsFolder.__controllers.length >= 3) {
 				this.actionsFolder.remove(this.actionsFolder.__controllers.at(-1));
 			}
 
@@ -599,6 +637,10 @@ export default {
 		},
 		async droppedFiles(event) {
 			let files = await loadDroppedFiles(event);
+			this.loadConfigFromFiles(files);
+			this.directoryHandle = null;
+		},
+		loadConfigFromFiles(files) {
 			let modelFile = files.find(file => file.name.toLowerCase().includes('.fbx') && !file.name.includes('@'));
 			let textureFile = files.find(file => file.name.toLowerCase().includes('.tga'));
 			if(!modelFile || !textureFile) {
@@ -621,6 +663,29 @@ export default {
 						name: file.name.toLowerCase()
 					};
 				}));
+			}
+		},
+
+		async openFolder() {
+			// Neither passing writable or mode: readwrite seems to work.  Leaving in in case they add support in the future
+			let directoryHandle = await window.showDirectoryPicker({ mode: 'readwrite', writable: true });
+			await directoryHandle.requestPermission({ mode: 'readwrite' });
+
+			let files = [];
+			await this.addFilesFromFolder(directoryHandle, files);
+			this.loadConfigFromFiles(files);
+			this.directoryHandle = directoryHandle;
+		},
+		async addFilesFromFolder(directoryHandle, files) {
+			for await(let [key, handle] of directoryHandle.entries()) {
+				key = key.toLowerCase();
+
+				if(handle instanceof window.FileSystemDirectoryHandle) {
+					await this.addFilesFromFolder(handle, files);
+				} else if(key === 'config.json' || key.includes('fbx') || key.includes('tga')) {
+					let file = await handle.getFile();
+					files.push(file);
+				}
 			}
 		}
 	},
@@ -704,6 +769,11 @@ export default {
 				this.recordAllAsSheets(this.config.name);
 			}
 		}, 'Save As Sheets');
+		this.actionsFolder.add({
+			'Open Folder': () => {
+				this.openFolder();
+			}
+		}, 'Open Folder');
 		this.actionsFolder.open();
 
 		this.frameSettingsFolder = this.gui.addFolder('Frames');
