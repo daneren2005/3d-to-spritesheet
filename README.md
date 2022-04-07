@@ -23,7 +23,7 @@ Convert FBX 3D models to 9-directional 2D spritesheets.  Only tested with a few 
 
 You can view each of the loaded animations from the animations tab.  You can generate individual animation frames or an entire spritesheet all at once for all animations from the Actions tab.  Defaults to 4 frames per animation and 256px frames on a 4096px sheet.  These options can be configured in the Frames tab.
 
-View at https://daneren2005.github.io/3d-to-spritesheet/.
+View at https://daneren2005.github.io/3d-to-spritesheet/
 
 ## Project setup
 ```

@@ -17,11 +17,11 @@ import { saveAs } from 'file-saver';
 import axios from 'axios';
 import defaultConfig from '../public/models/ToonRTS_demo_Knight/config.json';
 import loadDroppedFiles from '@/utils/load-dropped-files';
-import generateAngles from '@/utils/generate-angles';
+import generateAngles, { angleToRadians } from '@/utils/generate-angles';
 import pngquant from '@/utils/pngquant';
 
-const DEFAULT_DISTANCE = 1.05;
 const DEFAULT_FRAME_SIZE = 256;
+const DEFAULT_ANGLES_COUNT = 16;
 export default {
 	data: () => {
 		return {
@@ -43,10 +43,13 @@ export default {
 				frames: 4,
 				frameSize: DEFAULT_FRAME_SIZE,
 				sheetSize: 4096,
-				distance: DEFAULT_DISTANCE,
+				distance: 1,
+				viewAngle: 0,
 				compressPNG: true
 			},
-			angles: generateAngles(DEFAULT_DISTANCE),
+			angles: null,
+			angleNames: null,
+			anglesFolder: null,
 			isRecording: false
 		};
 	},
@@ -69,10 +72,7 @@ export default {
 		},
 
 		async recordAllAsSheets(name) {
-			let angleNames = Object.keys(this.angles.spritesheet);
-			angleNames.sort((a, b) => {
-				return parseInt(a) - parseInt(b);
-			});
+			let angleNames = this.angleNames;
 			let animationNames = Object.keys(this.animationActions);
 			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
 
@@ -175,11 +175,7 @@ export default {
 				let { action, frames, animationConfig } = this.animationActions[animationName];
 				await this.drawFramesFromAnimationAngle(options, action, frames, name, 'icon', animationConfig);
 			} else {
-				let angleNames = Object.keys(this.angles.spritesheet);
-				angleNames.sort((a, b) => {
-					return parseInt(a) - parseInt(b);
-				});
-
+				let angleNames = this.angleNames;
 				let { action, frames, animationConfig } = this.animationActions[name];
 				for(let i = 0; i < angleNames.length; i++) {
 					let angleName = angleNames[i];
@@ -322,15 +318,17 @@ export default {
 			};
 		},
 		updateAngle(angleName) {
-			let angles = this.angles.spritesheet[angleName] || this.angles[angleName];
-			if(angles.position) {
-				this.camera.position.set(...angles.position);
-				this.controls.target.set(...angles.target);
-			} else {
-				this.camera.position.set(...angles);
-			}
-
+			let angles = this.angles[angleName] || this.angles.spritesheet;
+			this.camera.position.set(...angles.position);
+			this.controls.target.set(...angles.target);
 			this.directionalLight.position.copy(this.camera.position);
+
+			let startAngle = this.config.startAngle || 270;
+			let angle = angleName;
+			if(angles.startAngle) {
+				angle = angles.startAngle;
+			}
+			this.currentModel.rotation.set(0, angleToRadians(angle - startAngle), 0);
 
 			if(this.config) {
 				let angleConfig = this.config.animations[angleName] || this.config[angleName];
@@ -356,12 +354,8 @@ export default {
 
 		loadModelFromConfig(config, files = null) {
 			this.config = config;
-			if(config.distance) {
-				this.recordParams.distance = config.distance;
-			} else {
-				this.recordParams.distance = DEFAULT_DISTANCE;
-			}
-			this.angles = generateAngles(this.recordParams.distance, config);
+			this.recordParams.distance = config.distance || 1.25;
+			this.recordParams.viewAngle = config.viewAngle === undefined ? 60 : config.viewAngle;
 			if(config.sheetSize) {
 				this.recordParams.sheetSize = config.sheetSize;
 			}
@@ -421,7 +415,6 @@ export default {
 				this.scene.remove(this.currentModel);
 				this.currentModel = null;
 			}
-			this.updateAngle('90');
 			this.animationActions = {};
 
 			this.modelReady = false;
@@ -455,6 +448,43 @@ export default {
 			model.scale.set(0.01, 0.01, 0.01);
 			this.mixer = new THREE.AnimationMixer(model);
 
+			var box = new THREE.Box3().setFromObject(model);
+			this.modelDimensions = {
+				x: box.max.x - box.min.x,
+				y: box.max.y - box.min.y,
+				z: box.max.z - box.min.z
+			};
+			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+			this.updateAngle('270');
+
+			while(this.anglesFolder.__controllers.length) {
+				this.anglesFolder.remove(this.anglesFolder.__controllers[0]);
+			}
+			let angleUpdater = {
+				icon: () => {
+					this.updateAngle('icon');
+				}
+			};
+			let angleNames = [];
+			let anglesCount = this.config.anglesCount || DEFAULT_ANGLES_COUNT;
+			for(let i = 0; i < anglesCount; i++) {
+				let angle = (360 / anglesCount) * i;
+				// Can just mirror left/right to save space
+				if(angle > 90 && angle < 270) {
+					continue;
+				}
+
+				angleNames.push(angle);
+			}
+			angleNames.forEach((angleName) => {
+				angleUpdater[angleName] = () => {
+					this.updateAngle(angleName);
+				};
+				this.anglesFolder.add(angleUpdater, angleName);
+			});
+			this.anglesFolder.add(angleUpdater, 'icon');
+			this.angleNames = angleNames;
+
 			this.scene.add(model);
 			if(this.modelFolder) {
 				while(this.modelFolder.__controllers.length) {
@@ -463,12 +493,21 @@ export default {
 			} else {
 				this.modelFolder = this.gui.addFolder('Model');
 			}
-			this.modelFolder.add(model.position, 'x', -4, 4).step(0.1).listen();
-			this.modelFolder.add(model.position, 'y', -4, 4).step(0.1).listen();
-			this.modelFolder.add(model.position, 'z', -4, 4).step(0.1).listen();
+			this.modelFolder.add(model.position, 'x', -4, 4).step(0.1).name('Position X').listen();
+			this.modelFolder.add(model.position, 'y', -4, 4).step(0.1).name('Position Y').listen();
+			this.modelFolder.add(model.position, 'z', -4, 4).step(0.1).name('Position Z').listen();
+			this.modelFolder.add(model.rotation, 'x', -4, 4).step(0.1).name('Rotation X').listen();
+			this.modelFolder.add(model.rotation, 'y', -4, 4).step(0.1).name('Rotation Y').listen();
+			this.modelFolder.add(model.rotation, 'z', -4, 4).step(0.1).name('Rotation Z').listen();
 			this.modelFolder.add(this.recordParams, 'distance', 0.5, 5).step(0.05).name('Distance').listen().onChange((newValue) => {
-				this.angles = generateAngles(newValue);
-				this.updateAngle('90');
+				this.recordParams.distance = newValue;
+				this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+				this.updateAngle('270');
+			});
+			this.modelFolder.add(this.recordParams, 'viewAngle', 0, 89).step(1).name('View Angle').listen().onChange((newValue) => {
+				this.recordParams.viewAngle = newValue;
+				this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+				this.updateAngle('270');
 			});
 
 			while(this.animationsFolder.__controllers.length) {
@@ -608,7 +647,6 @@ export default {
 			0.01,
 			1000
 		);
-		this.updateAngle('90');
 		// camera.rotation.set won't work due - need to use controls.target.set when using OrbitControls for mouse handlers
 
 		const renderer = this.renderer = new THREE.WebGLRenderer({
@@ -644,11 +682,11 @@ export default {
 		cameraFolder.add(camera.position, 'x', -4, 4).name('Position x').step(0.01).listen();
 		cameraFolder.add(camera.position, 'y', -4, 4).name('Position y').step(0.01).listen();
 		cameraFolder.add(camera.position, 'z', -4, 4).name('Position z').step(0.01).listen();
-		cameraFolder.add(camera, 'fov', -100,100).step(1).listen();
+		/*cameraFolder.add(camera, 'fov', -100,100).step(1).listen();
 		cameraFolder.add(camera, 'near', -100,100).step(1).listen();
 		cameraFolder.add(camera, 'far', -100,100).step(1).listen();
 		cameraFolder.add(camera, 'aspect', -100,100).step(1).listen();
-		cameraFolder.add(camera, 'zoom', -100,100).step(0.1).listen();
+		cameraFolder.add(camera, 'zoom', -100,100).step(0.1).listen();*/
 		cameraFolder.add(camera.rotation, 'x', -4, 4).name('Rotation x').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'y', -4, 4).name('Rotation y').step(0.01).listen();
 		cameraFolder.add(camera.rotation, 'z', -4, 4).name('Rotation z').step(0.01).listen();
@@ -657,23 +695,8 @@ export default {
 		cameraFolder.add(controls.target, 'z', -4, 4).name('Target z').step(0.01).listen();
 		// cameraFolder.open();
 
-		const anglesFolder = gui.addFolder('Angles');
-		let angleUpdater = {};
-
-		let angleNames = Object.keys(this.angles.spritesheet);
-		angleNames.sort((a, b) => {
-			return parseInt(a) - parseInt(b);
-		});
-		angleNames.forEach((angleName) => {
-			angleUpdater[angleName] = () => {
-				this.updateAngle(angleName);
-			};
-			anglesFolder.add(angleUpdater, angleName);
-		});
-		angleUpdater.icon = () => {
-			this.updateAngle('icon');
-		};
-		anglesFolder.add(angleUpdater, 'icon');
+		this.anglesFolder = gui.addFolder('Angles');
+		// this.anglesFolder.open();
 
 		this.actionsFolder = gui.addFolder('Actions');
 		this.actionsFolder.add({
@@ -704,7 +727,9 @@ export default {
 
 			controls.update();
 
-			if(this.modelReady && !this.isRecording) this.mixer.update(clock.getDelta());
+			if(this.modelReady && !this.isRecording) {
+				this.mixer.update(clock.getDelta());
+			}
 
 			render();
 
