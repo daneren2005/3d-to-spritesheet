@@ -548,6 +548,26 @@ export default {
 				this.updateAngle('270');
 			});
 
+			if(this.meshPartsFolder) {
+				while(this.meshPartsFolder.__controllers.length) {
+					this.meshPartsFolder.remove(this.meshPartsFolder.__controllers[0]);
+				}
+			} else {
+				this.meshPartsFolder = this.gui.addFolder('Mesh Parts');
+			}
+			let meshes = this.getMeshes(model);
+			meshes.sort((a, b) => a.name.localeCompare(b.name));
+			if(this.config.meshesEnabled) {
+				meshes.forEach(mesh => {
+					if(!this.config.meshesEnabled.includes(mesh.name)) {
+						mesh.visible = false;
+					}
+				});
+			}
+			meshes.forEach(mesh => {
+				this.meshPartsFolder.add(mesh, 'visible').name(mesh.name);
+			});
+
 			while(this.animationsFolder.__controllers.length) {
 				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
 			}
@@ -604,6 +624,18 @@ export default {
 			} else if(Object.values(this.animationActions).length > 0) {
 				this.setAction(Object.values(this.animationActions)[0].action);
 			}
+		},
+		getMeshes(group) {
+			let meshes = [];
+			group.children.forEach(child => {
+				if(child.constructor.name === 'SkinnedMesh' || child.constructor.name === 'Mesh') {
+					meshes.push(child);
+				} else {
+					meshes.push(...this.getMeshes(child));
+				}
+			});
+
+			return meshes;
 		},
 		async fixModelData(startBlob) {
 			let arrayBuffer = await startBlob.arrayBuffer();
@@ -855,5 +887,12 @@ body {
 	background: white;
 
 	transform-origin: top left;
+}
+
+.dg .cr.boolean .property-name {
+	width: 80%;
+}
+.dg .cr.boolean .c {
+	width: 0%;
 }
 </style>
