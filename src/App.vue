@@ -45,7 +45,7 @@ export default {
 				sheetSize: 4096,
 				distance: 1,
 				viewAngle: 0,
-				compressPNG: false,
+				compressPNG: true,
 				shadows: true,
 				shadowHeightAngle: 0,
 				shadowSideAngle: 0,
