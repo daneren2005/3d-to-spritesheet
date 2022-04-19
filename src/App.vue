@@ -45,7 +45,12 @@ export default {
 				sheetSize: 4096,
 				distance: 1,
 				viewAngle: 0,
-				compressPNG: true
+				compressPNG: true,
+				shadows: true,
+				shadowHeightAngle: 0,
+				shadowSideAngle: 0,
+				shadowDistance: 0,
+				shadowOpacity: 0
 			},
 			angles: null,
 			angleNames: null,
@@ -359,7 +364,8 @@ export default {
 			let angles = this.angles[angleName] || this.angles.spritesheet;
 			this.camera.position.set(...angles.position);
 			this.controls.target.set(...angles.target);
-			this.directionalLight.position.copy(this.camera.position);
+			this.directionalLight.position.set(...angles.light);
+			this.directionalLight.castShadow = this.recordParams.shadow;
 
 			let startAngle = this.config.startAngle || 270;
 			let angle = angleName;
@@ -367,6 +373,8 @@ export default {
 				angle = angles.startAngle;
 			}
 			this.currentModel.rotation.set(0, angleToRadians(angle - startAngle), 0);
+			this.currentAngleName = angleName;
+			this.floorMaterial.opacity = this.recordParams.shadowOpacity;
 
 			if(this.config) {
 				let angleConfig = this.config.animations[angleName] || this.config[angleName];
@@ -400,6 +408,11 @@ export default {
 			if(config.frameSize) {
 				this.setRenderSize(config.frameSize);
 			}
+			this.recordParams.shadow = config.shadow !== undefined ? config.shadow : true;
+			this.recordParams.shadowHeightAngle = config.shadowHeightAngle !== undefined ? config.shadowHeightAngle : 90;
+			this.recordParams.shadowSideAngle = config.shadowSideAngle !== undefined ? config.shadowSideAngle : 70;
+			this.recordParams.shadowDistance = config.shadowDistance !== undefined ? config.shadowDistance : (this.recordParams.distance || 1);
+			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(files) {
@@ -484,6 +497,13 @@ export default {
 
 			let model = this.currentModel = await fbxLoadPromise(fbxLoader, modelName);
 			model.scale.set(0.01, 0.01, 0.01);
+
+			model.traverse(it => {
+				if(it.isMesh) {
+					it.receiveShadow = false;
+					it.castShadow = true;
+				}
+			});
 			this.mixer = new THREE.AnimationMixer(model);
 
 			var box = new THREE.Box3().setFromObject(model);
@@ -492,6 +512,7 @@ export default {
 				y: box.max.y - box.min.y,
 				z: box.max.z - box.min.z
 			};
+			this.floorPlane.position.set(0, box.min.y, 0);
 			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
 			this.updateAngle('270');
 
@@ -731,6 +752,17 @@ export default {
 
 		const light2  = new THREE.DirectionalLight(0xFFFFFF, 0.8 * Math.PI);
 		light2.name = 'main_light';
+		light2.castShadow = true;
+		light2.shadow.mapSize.width = 2048;
+		light2.shadow.mapSize.height = 2048;
+
+		light2.shadow.camera.top = 2;
+		light2.shadow.camera.bottom = -2;
+		light2.shadow.camera.left = -2;
+		light2.shadow.camera.right = 2;
+		light2.shadow.camera.near = 0.1;
+		light2.shadow.camera.far = 500;
+		
 		scene.add(light2);
 		this.directionalLight = light2;
 
@@ -751,9 +783,9 @@ export default {
 			preserveDrawingBuffer: true,
 			alpha: true
 		});
-
 		renderer.setSize(this.recordParams.frameSize, this.recordParams.frameSize);
 		renderer.gammaOutput = true;
+		renderer.shadowMap.enabled = true;
 
 		this.$el.appendChild(renderer.domElement);
 
@@ -821,6 +853,38 @@ export default {
 		lightsFolder.add(light1, 'intensity', 0, 5).name('Ambient Light').step(0.01).listen();
 		lightsFolder.add(light2, 'intensity', 0, 5).name('Directional Light').step(0.01).listen();
 		lightsFolder.add(hemiLight, 'intensity', 0, 5).name('Hemisphere Light').step(0.01).listen();
+		lightsFolder.add(this.recordParams, 'shadow').name('Shadows').listen().onChange(() => {
+			this.updateAngle(this.currentAngleName);
+		});
+		lightsFolder.add(this.recordParams, 'shadowHeightAngle', 1, 179).name('Shadow Height Angle').listen().onChange(() => {
+			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+			this.updateAngle(this.currentAngleName);
+		});
+		lightsFolder.add(this.recordParams, 'shadowSideAngle', 1, 179).name('Shadow Side Angle').listen().onChange(() => {
+			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+			this.updateAngle(this.currentAngleName);
+		});
+		lightsFolder.add(this.recordParams, 'shadowDistance', 0.1, 5).step(0.05).name('Shadow Distance').listen().onChange(() => {
+			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+			this.updateAngle(this.currentAngleName);
+		});
+		
+		lightsFolder.add(this.recordParams, 'shadowOpacity', 0.05, 1).step(0.05).name('Shadow Opacity').listen().onChange(() => {
+			this.updateAngle(this.currentAngleName);
+		});
+
+
+		let floorGeometry = new THREE.PlaneBufferGeometry(2000, 2000, 8, 8);
+		let floorMaterial = new THREE.ShadowMaterial({
+			opacity : 0.8
+		});
+		let floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
+		floorPlane.castShadow = false;
+		floorPlane.receiveShadow = true;
+		floorPlane.rotateX(-Math.PI / 2);
+		this.floorPlane = floorPlane;
+		this.floorMaterial = floorMaterial;
+		scene.add(floorPlane);
 
 		const clock = new THREE.Clock();
 

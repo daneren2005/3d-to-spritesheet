@@ -25,5 +25,6 @@
 		"animation": "idle",
 		"size": 512
 	},
-	"viewAngle": 60
+	"viewAngle": 60,
+	"shadowHeightAngle": 80
 }
