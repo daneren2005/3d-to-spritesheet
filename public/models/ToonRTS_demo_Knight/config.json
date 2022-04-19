@@ -8,7 +8,7 @@
 			"frames": 4
 		},
 		"walk": {
-			"name": "models/ToonRTS_demo_Knight/model@run.FBX",
+			"name": "models/ToonRTS_demo_Knight/model@walk.FBX",
 			"frames": 12
 		},
 		"run": {
