@@ -45,12 +45,13 @@ export default {
 				sheetSize: 4096,
 				distance: 1,
 				viewAngle: 0,
-				compressPNG: true,
+				compressPNG: false,
 				shadows: true,
 				shadowHeightAngle: 0,
 				shadowSideAngle: 0,
 				shadowDistance: 0,
-				shadowOpacity: 0
+				shadowOpacity: 0,
+				packTextures: true
 			},
 			angles: null,
 			angleNames: null,
@@ -87,12 +88,15 @@ export default {
 				let animationName = animationNames[j];
 				let { frames } = this.animationActions[animationName];
 
-				let rowsLeft = (maxSize - 1) - options.row;
-				let cellsLeft = rowsLeft * maxSize + (maxSize - 1 - options.column); 
-				let neededSlots = frames * angleNames.length;
-				if(neededSlots > cellsLeft) {
-					console.warn(`skipping to next sheet since we need ${neededSlots} slots with ${cellsLeft} left`);
-					await this.startNewSheet(options);
+				// TODO: Implement at least a best guess with packing textures as well
+				if(!this.recordParams.packTextures) {
+					let rowsLeft = (maxSize - 1) - options.row;
+					let cellsLeft = rowsLeft * maxSize + (maxSize - 1 - options.column); 
+					let neededSlots = frames * angleNames.length;
+					if(neededSlots > cellsLeft) {
+						console.warn(`skipping to next sheet since we need ${neededSlots} slots with ${cellsLeft} left`);
+						await this.startNewSheet(options);
+					}
 				}
 
 				await this.drawFramesFromAnimation(animationName, options);
@@ -142,7 +146,13 @@ export default {
 				column: 0,
 				sheet: 0,
 				json: {},
-				modelName
+				modelName,
+
+				// Only used in packed mode
+				atlasTextures: [],
+				startX: 0,
+				startY: 0,
+				maxHeight: 0
 			};
 
 			if(this.directoryHandle) {
@@ -202,12 +212,20 @@ export default {
 					Object.values(options.json).forEach(animationJSON => {
 						animationJSON.sheet = animationJSON.sheet.replace('0.png', '.png');
 					});
+					options.atlasTextures.forEach(atlasTexture => {
+						atlasTexture.image = atlasTexture.image.replace('0.png', '.png');
+					});
 				}
 
 				await this.saveImageToZip(options, sheetName);
 			}
 
 			await options.saveFile('animations.json', JSON.stringify(options.json, null, '\t'));
+			if(this.recordParams.packTextures) {
+				await options.saveFile('atlas.json', JSON.stringify({
+					textures: options.atlasTextures
+				}, null, '\t'));
+			}
 		},
 
 		async drawFramesFromAnimation(name, options) {
@@ -260,9 +278,67 @@ export default {
 		},
 
 		async drawFrameFromAnimation(options, animationName, angle) {
-			options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
-			
 			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
+			if(this.recordParams.packTextures) {
+				let framePosition = this.getStartAndEndPixelsForFrame();
+
+				let drawWidth = framePosition.endX - framePosition.startX;
+				let drawHeight = framePosition.endY - framePosition.startY;
+				if((options.startX + drawWidth) > this.recordParams.sheetSize) {
+					options.startX = 0;
+					options.startY += options.maxHeight;
+					options.maxHeight = 0;
+					options.column = 0;
+					options.row++;
+				}
+				// TODO: Re-implement going to the next sheet with packed textures
+
+				options.ctx.drawImage(
+					this.renderer.domElement,
+					framePosition.startX,	// source x
+					framePosition.startY,	// source y
+					drawWidth,				// source width
+					drawHeight,				// source height
+					options.startX,			// dest canvas x
+					options.startY,			// dest canvas y
+					drawWidth,				// dest canvas width
+					drawHeight				// dest canvas height
+				);
+
+				if(options.atlasTextures.length <= options.sheet) {
+					options.atlasTextures.push({
+						image: `${options.modelName}${options.sheet}.png`,
+						frames: []		
+					});
+				}
+				options.atlasTextures[options.sheet].frames.push({
+					filename: options.atlasTextures[options.sheet].frames.length,
+					rotated: false,
+					trimmed: true,
+					sourceSize: {
+						w: this.recordParams.frameSize,
+						h: this.recordParams.frameSize
+					},
+					spriteSourceSize: {
+						x: framePosition.startX,
+						y: framePosition.startY,
+						w: drawWidth,
+						h: drawHeight
+					},
+					frame: {
+						x: options.startX,
+						y: options.startY,
+						w: drawWidth,
+						h: drawHeight
+					}
+				});
+
+				options.startX += drawWidth;
+				options.maxHeight = Math.max(options.maxHeight, drawHeight);
+			} else {
+				options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
+			}
+			
 			if(!options.json[animationName]) {
 				options.json[animationName] = {
 					sheet: `${options.modelName}${options.sheet}.png`,
@@ -289,7 +365,7 @@ export default {
 			}
 
 			options.column++;
-			if(options.column >= maxSize) {
+			if(options.column >= maxSize && !this.recordParams.packTextures) {
 				options.column = 0;
 				options.row++;
 
@@ -297,6 +373,58 @@ export default {
 					await this.startNewSheet(options);
 				}
 			}
+		},
+		getStartAndEndPixelsForFrame() {
+			let canvas = document.createElement('canvas');
+			canvas.width = this.renderer.domElement.width;
+			canvas.height = this.renderer.domElement.height;
+			let ctx = canvas.getContext('2d');
+			ctx.drawImage(this.renderer.domElement, 0, 0);
+
+			let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+			let pixelArray = imageData.data;
+
+			let startX = canvas.width;
+			let endX = 0;
+			let startY = canvas.height;
+			let endY = 0;
+
+			for(let p = 0; p < pixelArray.length / 4; p++) {
+				let index = 4 * p;
+				let alpha = pixelArray[index + 3];
+
+				if(alpha !== 0) {
+					let x = p % canvas.width;
+					let y = Math.floor(p / canvas.width);
+
+					startX = Math.min(startX, Math.max(0, x - 1));
+					startY = Math.min(startY, Math.max(0, y - 1));
+
+					endX = Math.max(endX, x + 1);
+					endY = Math.max(endY, y + 1);
+				}
+			}
+
+			// Probably will only happen on empty models, but worth handling anyways
+			if(startX === canvas.width) {
+				startX = 0;
+			}
+			if(startY === canvas.height) {
+				startY = 0;
+			}
+			if(endX === 0) {
+				endX = canvas.width;
+			}
+			if(endY === 0) {
+				endY = canvas.height;
+			}
+
+			return {
+				startX,
+				endX,
+				startY,
+				endY
+			};
 		},
 		async saveImageToZip(options, sheetName) {
 			let imgDataUrl = options.canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
@@ -336,6 +464,9 @@ export default {
 		resetSheetCanvas(options) {
 			options.row = 0;
 			options.column = 0;
+			options.startX = 0;
+			options.startY = 0;
+			options.maxHeight = 0;
 			let canvas = document.createElement('canvas');
 			canvas.width = this.recordParams.sheetSize;
 			canvas.height = this.recordParams.sheetSize;
@@ -413,6 +544,7 @@ export default {
 			this.recordParams.shadowSideAngle = config.shadowSideAngle !== undefined ? config.shadowSideAngle : 70;
 			this.recordParams.shadowDistance = config.shadowDistance !== undefined ? config.shadowDistance : (this.recordParams.distance || 1);
 			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
+			this.recordParams.packTextures = config.packTextures !== undefined ? config.packTextures : false;
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(files) {
@@ -848,6 +980,7 @@ export default {
 		});
 		this.frameSettingsFolder.add(this.recordParams, 'sheetSize', 64, 16384).step(64).name('Sheet Size').listen();
 		this.frameSettingsFolder.add(this.recordParams, 'compressPNG').name('Compress PNG').listen();
+		this.frameSettingsFolder.add(this.recordParams, 'packTextures').name('Pack Textures').listen();
 
 		const lightsFolder = gui.addFolder('Lights');
 		lightsFolder.add(light1, 'intensity', 0, 5).name('Ambient Light').step(0.01).listen();
