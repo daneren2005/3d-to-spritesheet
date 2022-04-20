@@ -91,7 +91,7 @@ export default {
 				// TODO: Implement at least a best guess with packing textures as well
 				if(!this.recordParams.packTextures) {
 					let rowsLeft = (maxSize - 1) - options.row;
-					let cellsLeft = rowsLeft * maxSize + (maxSize - 1 - options.column); 
+					let cellsLeft = rowsLeft * maxSize + (maxSize - options.column); 
 					let neededSlots = frames * angleNames.length;
 					if(neededSlots > cellsLeft) {
 						console.warn(`skipping to next sheet since we need ${neededSlots} slots with ${cellsLeft} left`);
@@ -507,6 +507,42 @@ export default {
 			this.renderer.domElement.style.transform = `scale(${scale})`;
 		},
 
+		addAnimationFromAction(animation, animationName) {
+			if(!animationName) {
+				animationName = animation.name;
+				Object.keys(this.config.animations).forEach(animationKey => {
+					if(animation.name === this.config.animations[animationKey].name) {
+						animationName = animationKey;
+					}
+				});
+			}
+
+			let animationAction = this.mixer.clipAction(animation);
+
+			// Add actions to folders
+			this.animationsFolder.add({
+				[animationName]: () => {
+					this.setAction(animationAction);
+				}
+			}, animationName);
+
+			this.actionsFolder.add({
+				[animationName]: () => {
+					this.recordAnimationAsSheet(animationName);
+				}
+			}, animationName);
+
+			let frames = this.recordParams.frames;
+			let animationConfig = null;
+			if(this.config.animations[animationName]) {
+				if(this.config.animations[animationName].frames) {
+					frames = this.config.animations[animationName].frames;
+				}
+				animationConfig = this.config.animations[animationName];
+			}
+
+			this.addAnimation(animationName, animationAction, frames, animationConfig);
+		},
 		addAnimation(name, action, frames, animationConfig) {
 			this.animationActions[name] = {
 				frames,
@@ -568,6 +604,9 @@ export default {
 			this.recordParams.shadowDistance = config.shadowDistance !== undefined ? config.shadowDistance : (this.recordParams.distance || 1);
 			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
 			this.recordParams.packTextures = config.packTextures !== undefined ? config.packTextures : false;
+			if(config.directionalLightIntensity) {
+				this.directionalLight.intensity = config.directionalLightIntensity;
+			}
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(files) {
@@ -578,6 +617,10 @@ export default {
 					return !usedFiles.map(file => file.name).includes(config.animations[animationKey].name);
 				});
 				missingAnimations.forEach(missingAnimation => {
+					if(!config.animations[missingAnimation].name.toLowerCase().includes('.fbx')) {
+						return;
+					}
+
 					alert(`Missing animation files for ${missingAnimation}`);
 				});
 
@@ -647,9 +690,6 @@ export default {
 				}
 			});
 
-			const animations = {};
-			const recordAnimations = {};
-
 			let model = this.currentModel = await fbxLoadPromise(fbxLoader, modelName);
 			model.scale.set(0.01, 0.01, 0.01);
 
@@ -680,15 +720,23 @@ export default {
 				}
 			};
 			let angleNames = [];
-			let anglesCount = this.config.anglesCount || DEFAULT_ANGLES_COUNT;
-			for(let i = 0; i < anglesCount; i++) {
-				let angle = (360 / anglesCount) * i;
-				// Can just mirror left/right to save space
-				if(angle > 90 && angle < 270) {
-					continue;
-				}
+			if(this.config.angles) {
+				angleNames = this.config.angles;
 
-				angleNames.push(angle);
+				if(!angleNames.includes(270)) {
+					this.updateAngle(angleNames[0]);
+				}
+			} else {
+				let anglesCount = this.config.anglesCount || DEFAULT_ANGLES_COUNT;
+				for(let i = 0; i < anglesCount; i++) {
+					let angle = (360 / anglesCount) * i;
+					// Can just mirror left/right to save space
+					if(angle > 90 && angle < 270) {
+						continue;
+					}
+
+					angleNames.push(angle);
+				}
 			}
 			angleNames.forEach((angleName) => {
 				angleUpdater[angleName] = () => {
@@ -716,12 +764,12 @@ export default {
 			this.modelFolder.add(this.recordParams, 'distance', 0.5, 5).step(0.05).name('Distance').listen().onChange((newValue) => {
 				this.recordParams.distance = newValue;
 				this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
-				this.updateAngle('270');
+				this.updateAngle(this.currentAngleName);
 			});
 			this.modelFolder.add(this.recordParams, 'viewAngle', 0, 89).step(1).name('View Angle').listen().onChange((newValue) => {
 				this.recordParams.viewAngle = newValue;
 				this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
-				this.updateAngle('270');
+				this.updateAngle(this.currentAngleName);
 			});
 
 			if(this.meshPartsFolder) {
@@ -762,36 +810,18 @@ export default {
 					animationName = name.substring(name.indexOf('@') + 1, name.toLowerCase().lastIndexOf('.fbx'));
 				}
 				let animationObject = await fbxLoadPromise(fbxLoader, name);
-				let animationAction = this.mixer.clipAction(animationObject.animations[0]);
-
-				// Add actions to folders
-				animations[animationName] = () => {
-					this.setAction(animationAction);
-				};
-				this.animationsFolder.add(animations, animationName);
-
-				recordAnimations[animationName] = () => {
-					this.recordAnimationAsSheet(animationName);
-				};
-				this.actionsFolder.add(recordAnimations, animationName);
-
-				let frames = this.recordParams.frames;
-				let animationConfig = null;
-				if(this.config.animations[animationName]) {
-					if(this.config.animations[animationName].frames) {
-						frames = this.config.animations[animationName].frames;
-					}
-					animationConfig = this.config.animations[animationName];
-				}
-
-				this.addAnimation(animationName, animationAction, frames, animationConfig);
+				this.addAnimationFromAction(animationObject.animations[0], animationName);
 			}
+			model.animations.forEach(animation => {
+				this.addAnimationFromAction(animation);
+			});
 
 			if(this.config.icon) {
-				recordAnimations.icon = () => {
-					this.recordAnimationAsSheet('icon');
-				};
-				this.actionsFolder.add(recordAnimations, 'icon');
+				this.actionsFolder.add({
+					icon: () => {
+						this.recordAnimationAsSheet('icon');
+					}
+				}, 'icon');
 			}
 
 			this.modelReady = true;
