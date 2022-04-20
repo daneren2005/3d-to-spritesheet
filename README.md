@@ -54,7 +54,7 @@ The view angle defaults to 60 degrees, and can be configured with `"viewAngle": 
 | shadowSideAngle 	| 70 				| The angle to the side of the model that the light is casting a shadow from |
 | shadowDistance 	| 1.25 				| The distance from the model that light is casting a shadow from |
 | shadowOpacity 	| 0.6 				| How light or dark the shadow is |
-| packTextures 		| false				| If true we will try to pack textures in as tight as possible and generate an atlas.json you can use to get the position of each individual frame.  Didn't work too well in practice due to poor handling of different animations/frames having different width/heights from each other. |
+| packTextures 		| false				| If true we will try to pack frames in as tight as possible and generate an atlas.json you can use to get the position of each individual frame.  Didn't work too well in practice due to poor handling of different animations/frames having different width/heights from each other. |
 
 ## Project setup and running/building
 ```

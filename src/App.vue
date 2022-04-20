@@ -257,11 +257,34 @@ export default {
 			}
 
 			this.isRecording = true;
+			let params = {};
+			if(this.recordParams.packTextures) {
+				this.mixer.update(0);
+				await raf();
+				for(let i = 0; i < FRAMES; i++) {
+					let framePosition = this.getStartAndEndPixelsForFrame();
+					if(params.trimSize) {
+						params.trimSize = {
+							startX: Math.min(framePosition.startX, params.trimSize.startX),
+							startY: Math.min(framePosition.startY, params.trimSize.startY),
+							endX: Math.max(framePosition.endX, params.trimSize.endX),
+							endY: Math.max(framePosition.endY, params.trimSize.endY)
+						};
+					} else {
+						params.trimSize = framePosition;
+					}
+
+					this.mixer.update(skipTime);
+					await raf();
+				}
+			}
+
+			this.setAction(action);
 			// 0 update seems to fix some models starting out different than it should - peasant starts out holding gold and wood even though a 0ms update shows him starting to swing a pickaxe
 			this.mixer.update(0);
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
-				await this.drawFrameFromAnimation(options, animationName, angle);
+				await this.drawFrameFromAnimation(options, animationName, angle, params);
 
 				this.mixer.update(skipTime);
 				await raf();
@@ -277,10 +300,10 @@ export default {
 			return action._clip.duration * durationMultiplier;
 		},
 
-		async drawFrameFromAnimation(options, animationName, angle) {
+		async drawFrameFromAnimation(options, animationName, angle, params) {
 			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
 			if(this.recordParams.packTextures) {
-				let framePosition = this.getStartAndEndPixelsForFrame();
+				let framePosition = params.trimSize;
 
 				let drawWidth = framePosition.endX - framePosition.startX;
 				let drawHeight = framePosition.endY - framePosition.startY;
