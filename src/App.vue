@@ -45,7 +45,13 @@ export default {
 				sheetSize: 4096,
 				distance: 1,
 				viewAngle: 0,
-				compressPNG: true
+				compressPNG: true,
+				shadows: true,
+				shadowHeightAngle: 0,
+				shadowSideAngle: 0,
+				shadowDistance: 0,
+				shadowOpacity: 0,
+				packTextures: true
 			},
 			angles: null,
 			angleNames: null,
@@ -56,7 +62,14 @@ export default {
 	},
 	methods: {
 		setAction(toAction) {
-			if(toAction != this.activeAction) {
+			if(!toAction) {
+				// Do nothing
+				let lastAction = this.activeAction;
+				this.activeAction = toAction;
+				if(lastAction) {
+					lastAction.stop();
+				}
+			} else if(toAction != this.activeAction) {
 				let lastAction = this.activeAction;
 				this.activeAction = toAction;
 				if(lastAction) {
@@ -82,12 +95,15 @@ export default {
 				let animationName = animationNames[j];
 				let { frames } = this.animationActions[animationName];
 
-				let rowsLeft = (maxSize - 1) - options.row;
-				let cellsLeft = rowsLeft * maxSize + (maxSize - 1 - options.column); 
-				let neededSlots = frames * angleNames.length;
-				if(neededSlots > cellsLeft) {
-					console.warn(`skipping to next sheet since we need ${neededSlots} slots with ${cellsLeft} left`);
-					await this.startNewSheet(options);
+				// TODO: Implement at least a best guess with packing textures as well
+				if(!this.recordParams.packTextures) {
+					let rowsLeft = (maxSize - 1) - options.row;
+					let cellsLeft = rowsLeft * maxSize + (maxSize - options.column); 
+					let neededSlots = frames * angleNames.length;
+					if(neededSlots > cellsLeft) {
+						console.warn(`skipping to next sheet since we need ${neededSlots} slots with ${cellsLeft} left`);
+						await this.startNewSheet(options);
+					}
 				}
 
 				await this.drawFramesFromAnimation(animationName, options);
@@ -137,7 +153,13 @@ export default {
 				column: 0,
 				sheet: 0,
 				json: {},
-				modelName
+				modelName,
+
+				// Only used in packed mode
+				atlasTextures: [],
+				startX: 0,
+				startY: 0,
+				maxHeight: 0
 			};
 
 			if(this.directoryHandle) {
@@ -197,12 +219,20 @@ export default {
 					Object.values(options.json).forEach(animationJSON => {
 						animationJSON.sheet = animationJSON.sheet.replace('0.png', '.png');
 					});
+					options.atlasTextures.forEach(atlasTexture => {
+						atlasTexture.image = atlasTexture.image.replace('0.png', '.png');
+					});
 				}
 
 				await this.saveImageToZip(options, sheetName);
 			}
 
 			await options.saveFile('animations.json', JSON.stringify(options.json, null, '\t'));
+			if(this.recordParams.packTextures) {
+				await options.saveFile('atlas.json', JSON.stringify({
+					textures: options.atlasTextures
+				}, null, '\t'));
+			}
 		},
 
 		async drawFramesFromAnimation(name, options) {
@@ -234,11 +264,34 @@ export default {
 			}
 
 			this.isRecording = true;
+			let params = {};
+			if(this.recordParams.packTextures) {
+				this.mixer.update(0);
+				await raf();
+				for(let i = 0; i < FRAMES; i++) {
+					let framePosition = this.getStartAndEndPixelsForFrame();
+					if(params.trimSize) {
+						params.trimSize = {
+							startX: Math.min(framePosition.startX, params.trimSize.startX),
+							startY: Math.min(framePosition.startY, params.trimSize.startY),
+							endX: Math.max(framePosition.endX, params.trimSize.endX),
+							endY: Math.max(framePosition.endY, params.trimSize.endY)
+						};
+					} else {
+						params.trimSize = framePosition;
+					}
+
+					this.mixer.update(skipTime);
+					await raf();
+				}
+			}
+
+			this.setAction(action);
 			// 0 update seems to fix some models starting out different than it should - peasant starts out holding gold and wood even though a 0ms update shows him starting to swing a pickaxe
 			this.mixer.update(0);
 			await raf();
 			for(let i = 0; i < FRAMES; i++) {
-				await this.drawFrameFromAnimation(options, animationName, angle);
+				await this.drawFrameFromAnimation(options, animationName, angle, params);
 
 				this.mixer.update(skipTime);
 				await raf();
@@ -246,6 +299,10 @@ export default {
 			this.isRecording = false;
 		},
 		getActionDuration(action, animationConfig) {
+			if(!action) {
+				return 1;
+			}
+
 			let durationMultiplier = 1;
 			if(animationConfig && animationConfig.skipEnd) {
 				durationMultiplier = 1 - animationConfig.skipEnd;
@@ -254,10 +311,77 @@ export default {
 			return action._clip.duration * durationMultiplier;
 		},
 
-		async drawFrameFromAnimation(options, animationName, angle) {
-			options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
-			
+		async drawFrameFromAnimation(options, animationName, angle, params) {
 			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
+			if(this.recordParams.packTextures) {
+				let framePosition = params.trimSize;
+
+				let drawWidth = framePosition.endX - framePosition.startX;
+				let drawHeight = framePosition.endY - framePosition.startY;
+				if((options.startX + drawWidth) > this.recordParams.sheetSize) {
+					options.startX = 0;
+					options.startY += options.maxHeight;
+					options.maxHeight = 0;
+					options.column = 0;
+					options.row++;
+				}
+				// TODO: Re-implement going to the next sheet with packed textures
+
+				options.ctx.drawImage(
+					this.renderer.domElement,
+					framePosition.startX,	// source x
+					framePosition.startY,	// source y
+					drawWidth,				// source width
+					drawHeight,				// source height
+					options.startX,			// dest canvas x
+					options.startY,			// dest canvas y
+					drawWidth,				// dest canvas width
+					drawHeight				// dest canvas height
+				);
+
+				if(options.atlasTextures.length <= options.sheet) {
+					options.atlasTextures.push({
+						image: `${options.modelName}${options.sheet}.png`,
+						frames: []		
+					});
+				}
+				options.atlasTextures[options.sheet].frames.push({
+					filename: options.atlasTextures[options.sheet].frames.length,
+					rotated: false,
+					trimmed: true,
+					sourceSize: {
+						w: this.recordParams.frameSize,
+						h: this.recordParams.frameSize
+					},
+					spriteSourceSize: {
+						x: framePosition.startX,
+						y: framePosition.startY,
+						w: drawWidth,
+						h: drawHeight
+					},
+					frame: {
+						x: options.startX,
+						y: options.startY,
+						w: drawWidth,
+						h: drawHeight
+					}
+				});
+
+				options.startX += drawWidth;
+				options.maxHeight = Math.max(options.maxHeight, drawHeight);
+			} else {
+				if(options.column >= maxSize) {
+					options.column = 0;
+					options.row++;
+
+					if(options.row >= maxSize) {
+						await this.startNewSheet(options);
+					}
+				}
+
+				options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
+			}
+			
 			if(!options.json[animationName]) {
 				options.json[animationName] = {
 					sheet: `${options.modelName}${options.sheet}.png`,
@@ -284,14 +408,58 @@ export default {
 			}
 
 			options.column++;
-			if(options.column >= maxSize) {
-				options.column = 0;
-				options.row++;
+		},
+		getStartAndEndPixelsForFrame() {
+			let canvas = document.createElement('canvas');
+			canvas.width = this.renderer.domElement.width;
+			canvas.height = this.renderer.domElement.height;
+			let ctx = canvas.getContext('2d');
+			ctx.drawImage(this.renderer.domElement, 0, 0);
 
-				if(options.row >= maxSize) {
-					await this.startNewSheet(options);
+			let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+			let pixelArray = imageData.data;
+
+			let startX = canvas.width;
+			let endX = 0;
+			let startY = canvas.height;
+			let endY = 0;
+
+			for(let p = 0; p < pixelArray.length / 4; p++) {
+				let index = 4 * p;
+				let alpha = pixelArray[index + 3];
+
+				if(alpha !== 0) {
+					let x = p % canvas.width;
+					let y = Math.floor(p / canvas.width);
+
+					startX = Math.min(startX, Math.max(0, x - 1));
+					startY = Math.min(startY, Math.max(0, y - 1));
+
+					endX = Math.max(endX, x + 1);
+					endY = Math.max(endY, y + 1);
 				}
 			}
+
+			// Probably will only happen on empty models, but worth handling anyways
+			if(startX === canvas.width) {
+				startX = 0;
+			}
+			if(startY === canvas.height) {
+				startY = 0;
+			}
+			if(endX === 0) {
+				endX = canvas.width;
+			}
+			if(endY === 0) {
+				endY = canvas.height;
+			}
+
+			return {
+				startX,
+				endX,
+				startY,
+				endY
+			};
 		},
 		async saveImageToZip(options, sheetName) {
 			let imgDataUrl = options.canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
@@ -331,6 +499,9 @@ export default {
 		resetSheetCanvas(options) {
 			options.row = 0;
 			options.column = 0;
+			options.startX = 0;
+			options.startY = 0;
+			options.maxHeight = 0;
 			let canvas = document.createElement('canvas');
 			canvas.width = this.recordParams.sheetSize;
 			canvas.height = this.recordParams.sheetSize;
@@ -348,6 +519,43 @@ export default {
 			this.renderer.domElement.style.transform = `scale(${scale})`;
 		},
 
+		addAnimationFromAction(animation, animationName) {
+			if(!animationName) {
+				animationName = animation.name;
+				Object.keys(this.config.animations).forEach(animationKey => {
+					if(animation.name === this.config.animations[animationKey].name) {
+						animationName = animationKey;
+					}
+				});
+			}
+
+			let animationAction = this.mixer.clipAction(animation);
+			this.addAnimationToFolders(animationName, animationAction);
+
+			let frames = this.recordParams.frames;
+			let animationConfig = null;
+			if(this.config.animations[animationName]) {
+				if(this.config.animations[animationName].frames) {
+					frames = this.config.animations[animationName].frames;
+				}
+				animationConfig = this.config.animations[animationName];
+			}
+
+			this.addAnimation(animationName, animationAction, frames, animationConfig);
+		},
+		addAnimationToFolders(animationName, animationAction) {
+			this.animationsFolder.add({
+				[animationName]: () => {
+					this.setAction(animationAction);
+				}
+			}, animationName);
+
+			this.actionsFolder.add({
+				[animationName]: () => {
+					this.recordAnimationAsSheet(animationName);
+				}
+			}, animationName);
+		},
 		addAnimation(name, action, frames, animationConfig) {
 			this.animationActions[name] = {
 				frames,
@@ -359,7 +567,8 @@ export default {
 			let angles = this.angles[angleName] || this.angles.spritesheet;
 			this.camera.position.set(...angles.position);
 			this.controls.target.set(...angles.target);
-			this.directionalLight.position.copy(this.camera.position);
+			this.directionalLight.position.set(...angles.light);
+			this.directionalLight.castShadow = this.recordParams.shadow;
 
 			let startAngle = this.config.startAngle || 270;
 			let angle = angleName;
@@ -367,6 +576,8 @@ export default {
 				angle = angles.startAngle;
 			}
 			this.currentModel.rotation.set(0, angleToRadians(angle - startAngle), 0);
+			this.currentAngleName = angleName;
+			this.floorMaterial.opacity = this.recordParams.shadowOpacity;
 
 			if(this.config) {
 				let angleConfig = this.config.animations[angleName] || this.config[angleName];
@@ -400,6 +611,15 @@ export default {
 			if(config.frameSize) {
 				this.setRenderSize(config.frameSize);
 			}
+			this.recordParams.shadow = config.shadow !== undefined ? config.shadow : true;
+			this.recordParams.shadowHeightAngle = config.shadowHeightAngle !== undefined ? config.shadowHeightAngle : 90;
+			this.recordParams.shadowSideAngle = config.shadowSideAngle !== undefined ? config.shadowSideAngle : 70;
+			this.recordParams.shadowDistance = config.shadowDistance !== undefined ? config.shadowDistance : (this.recordParams.distance || 1);
+			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
+			this.recordParams.packTextures = config.packTextures !== undefined ? config.packTextures : false;
+			if(config.directionalLightIntensity) {
+				this.directionalLight.intensity = config.directionalLightIntensity;
+			}
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(files) {
@@ -410,6 +630,10 @@ export default {
 					return !usedFiles.map(file => file.name).includes(config.animations[animationKey].name);
 				});
 				missingAnimations.forEach(missingAnimation => {
+					if(!config.animations[missingAnimation].name.toLowerCase().includes('.fbx')) {
+						return;
+					}
+
 					alert(`Missing animation files for ${missingAnimation}`);
 				});
 
@@ -479,11 +703,15 @@ export default {
 				}
 			});
 
-			const animations = {};
-			const recordAnimations = {};
-
 			let model = this.currentModel = await fbxLoadPromise(fbxLoader, modelName);
 			model.scale.set(0.01, 0.01, 0.01);
+
+			model.traverse(it => {
+				if(it.isMesh) {
+					it.receiveShadow = false;
+					it.castShadow = true;
+				}
+			});
 			this.mixer = new THREE.AnimationMixer(model);
 
 			var box = new THREE.Box3().setFromObject(model);
@@ -492,6 +720,7 @@ export default {
 				y: box.max.y - box.min.y,
 				z: box.max.z - box.min.z
 			};
+			this.floorPlane.position.set(0, 0, 0);
 			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
 			this.updateAngle('270');
 
@@ -504,15 +733,23 @@ export default {
 				}
 			};
 			let angleNames = [];
-			let anglesCount = this.config.anglesCount || DEFAULT_ANGLES_COUNT;
-			for(let i = 0; i < anglesCount; i++) {
-				let angle = (360 / anglesCount) * i;
-				// Can just mirror left/right to save space
-				if(angle > 90 && angle < 270) {
-					continue;
-				}
+			if(this.config.angles) {
+				angleNames = this.config.angles;
 
-				angleNames.push(angle);
+				if(!angleNames.includes(270)) {
+					this.updateAngle(angleNames[0]);
+				}
+			} else {
+				let anglesCount = this.config.anglesCount || DEFAULT_ANGLES_COUNT;
+				for(let i = 0; i < anglesCount; i++) {
+					let angle = (360 / anglesCount) * i;
+					// Can just mirror left/right to save space
+					if(angle > 90 && angle < 270) {
+						continue;
+					}
+
+					angleNames.push(angle);
+				}
 			}
 			angleNames.forEach((angleName) => {
 				angleUpdater[angleName] = () => {
@@ -540,12 +777,12 @@ export default {
 			this.modelFolder.add(this.recordParams, 'distance', 0.5, 5).step(0.05).name('Distance').listen().onChange((newValue) => {
 				this.recordParams.distance = newValue;
 				this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
-				this.updateAngle('270');
+				this.updateAngle(this.currentAngleName);
 			});
 			this.modelFolder.add(this.recordParams, 'viewAngle', 0, 89).step(1).name('View Angle').listen().onChange((newValue) => {
 				this.recordParams.viewAngle = newValue;
 				this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
-				this.updateAngle('270');
+				this.updateAngle(this.currentAngleName);
 			});
 
 			if(this.meshPartsFolder) {
@@ -586,36 +823,26 @@ export default {
 					animationName = name.substring(name.indexOf('@') + 1, name.toLowerCase().lastIndexOf('.fbx'));
 				}
 				let animationObject = await fbxLoadPromise(fbxLoader, name);
-				let animationAction = this.mixer.clipAction(animationObject.animations[0]);
-
-				// Add actions to folders
-				animations[animationName] = () => {
-					this.setAction(animationAction);
+				this.addAnimationFromAction(animationObject.animations[0], animationName);
+			}
+			model.animations.forEach(animation => {
+				this.addAnimationFromAction(animation);
+			});
+			if(!Object.values(this.animationActions).length) {
+				this.addAnimationToFolders('static', null);
+				this.animationActions.static = {
+					frames: 1,
+					action: null,
+					animationConfig: {}
 				};
-				this.animationsFolder.add(animations, animationName);
-
-				recordAnimations[animationName] = () => {
-					this.recordAnimationAsSheet(animationName);
-				};
-				this.actionsFolder.add(recordAnimations, animationName);
-
-				let frames = this.recordParams.frames;
-				let animationConfig = null;
-				if(this.config.animations[animationName]) {
-					if(this.config.animations[animationName].frames) {
-						frames = this.config.animations[animationName].frames;
-					}
-					animationConfig = this.config.animations[animationName];
-				}
-
-				this.addAnimation(animationName, animationAction, frames, animationConfig);
 			}
 
 			if(this.config.icon) {
-				recordAnimations.icon = () => {
-					this.recordAnimationAsSheet('icon');
-				};
-				this.actionsFolder.add(recordAnimations, 'icon');
+				this.actionsFolder.add({
+					icon: () => {
+						this.recordAnimationAsSheet('icon');
+					}
+				}, 'icon');
 			}
 
 			this.modelReady = true;
@@ -731,6 +958,17 @@ export default {
 
 		const light2  = new THREE.DirectionalLight(0xFFFFFF, 0.8 * Math.PI);
 		light2.name = 'main_light';
+		light2.castShadow = true;
+		light2.shadow.mapSize.width = 4096;
+		light2.shadow.mapSize.height = 4096;
+
+		light2.shadow.camera.top = 2;
+		light2.shadow.camera.bottom = -2;
+		light2.shadow.camera.left = -2;
+		light2.shadow.camera.right = 2;
+		light2.shadow.camera.near = 0.1;
+		light2.shadow.camera.far = 500;
+		
 		scene.add(light2);
 		this.directionalLight = light2;
 
@@ -751,9 +989,9 @@ export default {
 			preserveDrawingBuffer: true,
 			alpha: true
 		});
-
 		renderer.setSize(this.recordParams.frameSize, this.recordParams.frameSize);
 		renderer.gammaOutput = true;
+		renderer.shadowMap.enabled = true;
 
 		this.$el.appendChild(renderer.domElement);
 
@@ -816,11 +1054,44 @@ export default {
 		});
 		this.frameSettingsFolder.add(this.recordParams, 'sheetSize', 64, 16384).step(64).name('Sheet Size').listen();
 		this.frameSettingsFolder.add(this.recordParams, 'compressPNG').name('Compress PNG').listen();
+		this.frameSettingsFolder.add(this.recordParams, 'packTextures').name('Pack Textures').listen();
 
 		const lightsFolder = gui.addFolder('Lights');
 		lightsFolder.add(light1, 'intensity', 0, 5).name('Ambient Light').step(0.01).listen();
 		lightsFolder.add(light2, 'intensity', 0, 5).name('Directional Light').step(0.01).listen();
 		lightsFolder.add(hemiLight, 'intensity', 0, 5).name('Hemisphere Light').step(0.01).listen();
+		lightsFolder.add(this.recordParams, 'shadow').name('Shadows').listen().onChange(() => {
+			this.updateAngle(this.currentAngleName);
+		});
+		lightsFolder.add(this.recordParams, 'shadowHeightAngle', 1, 179).name('Shadow Height Angle').listen().onChange(() => {
+			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+			this.updateAngle(this.currentAngleName);
+		});
+		lightsFolder.add(this.recordParams, 'shadowSideAngle', 1, 179).name('Shadow Side Angle').listen().onChange(() => {
+			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+			this.updateAngle(this.currentAngleName);
+		});
+		lightsFolder.add(this.recordParams, 'shadowDistance', 0.1, 5).step(0.05).name('Shadow Distance').listen().onChange(() => {
+			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
+			this.updateAngle(this.currentAngleName);
+		});
+		
+		lightsFolder.add(this.recordParams, 'shadowOpacity', 0.05, 1).step(0.05).name('Shadow Opacity').listen().onChange(() => {
+			this.updateAngle(this.currentAngleName);
+		});
+
+
+		let floorGeometry = new THREE.PlaneBufferGeometry(2000, 2000, 8, 8);
+		let floorMaterial = new THREE.ShadowMaterial({
+			opacity : 0.8
+		});
+		let floorPlane = new THREE.Mesh(floorGeometry, floorMaterial);
+		floorPlane.castShadow = false;
+		floorPlane.receiveShadow = true;
+		floorPlane.rotateX(-Math.PI / 2);
+		this.floorPlane = floorPlane;
+		this.floorMaterial = floorMaterial;
+		scene.add(floorPlane);
 
 		const clock = new THREE.Clock();
 
