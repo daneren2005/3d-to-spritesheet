@@ -62,7 +62,14 @@ export default {
 	},
 	methods: {
 		setAction(toAction) {
-			if(toAction != this.activeAction) {
+			if(!toAction) {
+				// Do nothing
+				let lastAction = this.activeAction;
+				this.activeAction = toAction;
+				if(lastAction) {
+					lastAction.stop();
+				}
+			} else if(toAction != this.activeAction) {
 				let lastAction = this.activeAction;
 				this.activeAction = toAction;
 				if(lastAction) {
@@ -292,6 +299,10 @@ export default {
 			this.isRecording = false;
 		},
 		getActionDuration(action, animationConfig) {
+			if(!action) {
+				return 1;
+			}
+
 			let durationMultiplier = 1;
 			if(animationConfig && animationConfig.skipEnd) {
 				durationMultiplier = 1 - animationConfig.skipEnd;
@@ -359,6 +370,15 @@ export default {
 				options.startX += drawWidth;
 				options.maxHeight = Math.max(options.maxHeight, drawHeight);
 			} else {
+				if(options.column >= maxSize) {
+					options.column = 0;
+					options.row++;
+
+					if(options.row >= maxSize) {
+						await this.startNewSheet(options);
+					}
+				}
+
 				options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
 			}
 			
@@ -388,14 +408,6 @@ export default {
 			}
 
 			options.column++;
-			if(options.column >= maxSize && !this.recordParams.packTextures) {
-				options.column = 0;
-				options.row++;
-
-				if(options.row >= maxSize) {
-					await this.startNewSheet(options);
-				}
-			}
 		},
 		getStartAndEndPixelsForFrame() {
 			let canvas = document.createElement('canvas');
@@ -518,19 +530,7 @@ export default {
 			}
 
 			let animationAction = this.mixer.clipAction(animation);
-
-			// Add actions to folders
-			this.animationsFolder.add({
-				[animationName]: () => {
-					this.setAction(animationAction);
-				}
-			}, animationName);
-
-			this.actionsFolder.add({
-				[animationName]: () => {
-					this.recordAnimationAsSheet(animationName);
-				}
-			}, animationName);
+			this.addAnimationToFolders(animationName, animationAction);
 
 			let frames = this.recordParams.frames;
 			let animationConfig = null;
@@ -542,6 +542,19 @@ export default {
 			}
 
 			this.addAnimation(animationName, animationAction, frames, animationConfig);
+		},
+		addAnimationToFolders(animationName, animationAction) {
+			this.animationsFolder.add({
+				[animationName]: () => {
+					this.setAction(animationAction);
+				}
+			}, animationName);
+
+			this.actionsFolder.add({
+				[animationName]: () => {
+					this.recordAnimationAsSheet(animationName);
+				}
+			}, animationName);
 		},
 		addAnimation(name, action, frames, animationConfig) {
 			this.animationActions[name] = {
@@ -815,6 +828,14 @@ export default {
 			model.animations.forEach(animation => {
 				this.addAnimationFromAction(animation);
 			});
+			if(!Object.values(this.animationActions).length) {
+				this.addAnimationToFolders('static', null);
+				this.animationActions.static = {
+					frames: 1,
+					action: null,
+					animationConfig: {}
+				};
+			}
 
 			if(this.config.icon) {
 				this.actionsFolder.add({
