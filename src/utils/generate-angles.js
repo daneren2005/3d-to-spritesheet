@@ -28,7 +28,11 @@ export default function generateAngles(modelDimensions, config, recordParams) {
 	return {
 		spritesheet: {
 			position: getSphereAngle(distance, modelDimensions, baseAngle, viewAngle),
-			target: [0, modelDimensions.y / 2, 0],
+			target: [
+				(config.cameraTarget ? config.cameraTarget.x : null) || 0,
+				(config.cameraTarget ? config.cameraTarget.y : null) || modelDimensions.y / 2,
+				(config.cameraTarget ? config.cameraTarget.z : null) || 0
+			],
 			light: getSphereAngle(shadowDistance, modelDimensions, shadowSideAngle, shadowHeightAngle)
 		},
 		icon: iconParams
