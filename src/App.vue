@@ -720,7 +720,7 @@ export default {
 				y: box.max.y - box.min.y,
 				z: box.max.z - box.min.z
 			};
-			this.floorPlane.position.set(0, box.min.y, 0);
+			this.floorPlane.position.set(0, 0, 0);
 			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
 			this.updateAngle('270');
 
@@ -959,8 +959,8 @@ export default {
 		const light2  = new THREE.DirectionalLight(0xFFFFFF, 0.8 * Math.PI);
 		light2.name = 'main_light';
 		light2.castShadow = true;
-		light2.shadow.mapSize.width = 2048;
-		light2.shadow.mapSize.height = 2048;
+		light2.shadow.mapSize.width = 4096;
+		light2.shadow.mapSize.height = 4096;
 
 		light2.shadow.camera.top = 2;
 		light2.shadow.camera.bottom = -2;
