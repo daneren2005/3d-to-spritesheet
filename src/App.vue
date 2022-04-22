@@ -620,6 +620,9 @@ export default {
 			if(config.directionalLightIntensity) {
 				this.directionalLight.intensity = config.directionalLightIntensity;
 			}
+			if(config.hemisphereLightIntensity) {
+				this.hemisphereLight.intensity = config.hemisphereLightIntensity;
+			}
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(files) {
@@ -972,7 +975,7 @@ export default {
 		scene.add(light2);
 		this.directionalLight = light2;
 
-		const hemiLight = new THREE.HemisphereLight();
+		const hemiLight = this.hemisphereLight = new THREE.HemisphereLight();
 		hemiLight.name = 'hemi_light';
 		scene.add(hemiLight);
 

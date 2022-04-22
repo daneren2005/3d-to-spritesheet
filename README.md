@@ -50,6 +50,7 @@ The view angle defaults to 60 degrees, and can be configured with `"viewAngle": 
 | anglesCount 		| 16 				| The number of angles that are captured around the model.  Most basic pixel art is only done with 4 angles (left, right, up, down).  16 seems to give Starcraft 1 levels of quality. |
 | frameSize 		| 256 				| How many pixels each frame takes up. The default of 256 / 4096 allows for 256 frames per sheet.  128 seems to be the sweet spot for good enough small file sizes.  256 looks pretty good but is significantly larger than 128.  YMMV depending on how close your camera is to the units. |
 | directionalLightIntensity | 2.51		| How bright the directional light is |
+| hemisphereLightIntensity | 1			| How bright the hemisphere light is |
 | sheetSize 		| 4096 				| The total size of each sprite sheet. Different devices have different limitations on the size of a single texture. |
 | shadow 			| true 				| Whether to render with shadow |
 | shadowHeightAngle | 90 				| The angle above the model that the light is casting a shadow from |
