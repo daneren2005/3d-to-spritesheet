@@ -690,16 +690,22 @@ export default {
 			let modelBlobSet = blobs.find(({name}) => name.toLowerCase().includes('.fbx') && !name.includes('@'));
 			let modelBlob = modelBlobSet.blob;
 			let modelName = modelBlobSet.name;
-			modelBlob = await this.fixModelData(modelBlob);
-			let textureBlob = blobs.find(({name}) => name.includes('.tga')).blob;
-			manager.setURLModifier((url) => {
-				let matchingBlob = blobs.find(({name}) => name.includes(url));
 
+			let textureBlobs = blobs.filter(({name}) => name.toLowerCase().includes('.tga') || name.toLowerCase().includes('.png'));
+			if(textureBlobs.length) {
+				let textureBlobExtension = textureBlobs[0].name.split('.').at(-1);
+				modelBlob = await this.fixModelData(modelBlob, textureBlobExtension);
+			}
+
+			let textureBlob = textureBlobs.length ? textureBlobs[0].blob : null;
+			manager.setURLModifier((url) => {
+				let matchingBlob = blobs.find(({name}) => name.toLowerCase().includes(url.toLowerCase().replace('./', '')));
+				
 				if(modelName.includes(url)) {
 					return URL.createObjectURL(modelBlob);
 				} else if(matchingBlob) {
 					return URL.createObjectURL(matchingBlob.blob);
-				} else if(url.includes('.tga') && textureBlob) {
+				} else if((url.toLowerCase().includes('.tga') || url.toLowerCase().includes('.png')) && textureBlob) {
 					return URL.createObjectURL(textureBlob);
 				} else {
 					return url;
@@ -867,17 +873,23 @@ export default {
 
 			return meshes;
 		},
-		async fixModelData(startBlob) {
+		async fixModelData(startBlob, textureBlobExtension) {
 			let arrayBuffer = await startBlob.arrayBuffer();
 			let modelArray = new Uint8Array(arrayBuffer);
 
+			this.replaceLetters(modelArray, '.psd', '.' + textureBlobExtension.toLowerCase());
+			this.replaceLetters(modelArray, '.jpg', '.' + textureBlobExtension.toLowerCase());
+
+			return new Blob([arrayBuffer]);
+		},
+		replaceLetters(modelArray, search, replace) {
 			let matchCount = 0;
-			const psdSearchCodes = ['.', 'p', 's', 'd'].map(char => char.charCodeAt(0));
-			const tgaReplaceCodes = ['.', 't', 'g', 'a'].map(char => char.charCodeAt(0));
+			const searchCodes = search.split('').map(char => char.charCodeAt(0));
+			const replaceCodes = replace.split('').map(char => char.charCodeAt(0));
 			for(let i = 0; i < modelArray.length; i++) {
 				let matches = true;
-				for(let j = 0; j < psdSearchCodes.length; j++) {
-					if(modelArray[i + j] !== psdSearchCodes[j]) {
+				for(let j = 0; j < searchCodes.length; j++) {
+					if(modelArray[i + j] !== searchCodes[j]) {
 						matches = false;
 						break;
 					}
@@ -886,16 +898,14 @@ export default {
 				if(matches) {
 					matchCount++;
 
-					for(let j = 0; j < psdSearchCodes.length; j++) {
-						modelArray[i + j] = tgaReplaceCodes[j];
+					for(let j = 0; j < searchCodes.length; j++) {
+						modelArray[i + j] = replaceCodes[j];
 					}
 				}
 			}
 			if(matchCount > 0) {
-				console.warn(`Fixed: replaced .psd with .tga ${matchCount} times`);
+				console.warn(`Fixed: replaced ${search} with ${replace} ${matchCount} times`);
 			}
-
-			return new Blob([arrayBuffer]);
 		},
 		async droppedFiles(event) {
 			let files = await loadDroppedFiles(event);
@@ -904,9 +914,8 @@ export default {
 		},
 		loadConfigFromFiles(files) {
 			let modelFile = files.find(file => file.name.toLowerCase().includes('.fbx') && !file.name.includes('@'));
-			let textureFile = files.find(file => file.name.toLowerCase().includes('.tga'));
-			if(!modelFile || !textureFile) {
-				alert('You need to upload at least a fbx and a texture file');
+			if(!modelFile) {
+				alert('You need to upload at least a fbx file');
 				return;
 			}
 
@@ -944,7 +953,7 @@ export default {
 
 				if(handle instanceof window.FileSystemDirectoryHandle) {
 					await this.addFilesFromFolder(handle, files);
-				} else if(key === 'config.json' || key.includes('fbx') || key.includes('tga')) {
+				} else if(key === 'config.json' || key.includes('.fbx') || key.includes('.tga') || key.includes('.png')) {
 					let file = await handle.getFile();
 					files.push(file);
 				}
