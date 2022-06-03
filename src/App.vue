@@ -570,7 +570,10 @@ export default {
 			this.directionalLight.position.set(...angles.light);
 			this.directionalLight.castShadow = this.recordParams.shadow;
 
-			let startAngle = this.config.startAngle || 270;
+			let startAngle = this.config.startAngle;
+			if(startAngle === undefined) {
+				startAngle = 270;
+			}
 			let angle = angleName;
 			if(angles.startAngle) {
 				angle = angles.startAngle;
@@ -617,6 +620,9 @@ export default {
 			this.recordParams.shadowDistance = config.shadowDistance !== undefined ? config.shadowDistance : (this.recordParams.distance || 1);
 			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
 			this.recordParams.packTextures = config.packTextures !== undefined ? config.packTextures : false;
+			if(config.ambientLightIntensity) {
+				this.ambientLight.intensity = config.ambientLightIntensity;
+			}
 			if(config.directionalLightIntensity) {
 				this.directionalLight.intensity = config.directionalLightIntensity;
 			}
@@ -625,6 +631,11 @@ export default {
 			}
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
+			if(config.material) {
+				for(let type in config.material) {
+					filenames.push(config.material[type]);
+				}
+			}
 			if(files) {
 				let usedFiles = files.filter(file => {
 					return filenames.includes(file.name);
@@ -686,6 +697,7 @@ export default {
 			const manager = new LoadingManager();
 			manager.addHandler( /\.tga$/i, new TGALoader(manager) );
 			const fbxLoader = new FBXLoader(manager);
+			let textureLoader = new THREE.TextureLoader(manager);
 
 			let modelBlobSet = blobs.find(({name}) => name.toLowerCase().includes('.fbx') && !name.includes('@'));
 			let modelBlob = modelBlobSet.blob;
@@ -700,7 +712,8 @@ export default {
 			let textureBlob = textureBlobs.length ? textureBlobs[0].blob : null;
 			manager.setURLModifier((url) => {
 				let matchingBlob = blobs.find(({name}) => name.toLowerCase().includes(url.toLowerCase().replace('./', '')));
-				
+				// console.log(`loading ${url.toLowerCase().replace('./', '')} - ${matchingBlob ? matchingBlob.name : null}`);
+
 				if(modelName.includes(url)) {
 					return URL.createObjectURL(modelBlob);
 				} else if(matchingBlob) {
@@ -713,6 +726,26 @@ export default {
 			});
 
 			let model = this.currentModel = await fbxLoadPromise(fbxLoader, modelName);
+			if(this.config.material) {
+				let modelMesh = model;
+				if(modelMesh.constructor.name == 'Group') {
+					modelMesh = modelMesh.children[0];
+				}
+
+				for(let prop in this.config.material) {
+					let value = this.config.material[prop];
+					if(prop.toLowerCase().includes('map')) {
+						let texture = await fbxLoadPromise(textureLoader, value);
+						modelMesh.material[prop] = texture;
+					} else {
+						if(typeof value === 'string' && value.includes('rgb(')) {
+							modelMesh.material[prop] = new THREE.Color(value);
+						} else {
+							modelMesh.material[prop] = value;
+						}
+					}
+				}
+			}
 			model.scale.set(0.01, 0.01, 0.01);
 
 			model.traverse(it => {
@@ -967,6 +1000,7 @@ export default {
 		const light1  = new THREE.AmbientLight(0xFFFFFF, 0.3);
 		light1.name = 'ambient_light';
 		scene.add(light1);
+		this.ambientLight = light1;
 
 		const light2  = new THREE.DirectionalLight(0xFFFFFF, 0.8 * Math.PI);
 		light2.name = 'main_light';
