@@ -22,6 +22,7 @@ import pngquant from '@/utils/pngquant';
 
 const DEFAULT_FRAME_SIZE = 256;
 const DEFAULT_ANGLES_COUNT = 16;
+const DEFAULT_FORMAT = 'png';
 export default {
 	data: () => {
 		return {
@@ -45,6 +46,7 @@ export default {
 				sheetSize: 4096,
 				distance: 1,
 				viewAngle: 0,
+				imageFormat: DEFAULT_FORMAT,
 				compressPNG: true,
 				shadows: true,
 				shadowHeightAngle: 0,
@@ -116,7 +118,7 @@ export default {
 				options.canvas.width = this.config.icon.size;
 				options.canvas.height = this.config.icon.size;
 				await this.drawFramesFromAnimation('icon', options);
-				await this.saveImageToZip(options, 'icon.png');
+				await this.saveImageToZip(options, `icon.${this.recordParams.imageFormat}`);
 			}
 
 			options.finishWriting();
@@ -180,7 +182,7 @@ export default {
 						else {
 							byteArray = contents;
 						}
-						contents = new Blob([byteArray], {type: 'image/png'});
+						contents = new Blob([byteArray], {type: `image/${this.recordParams.imageFormat}`});
 					}
 					let fileHandle = await this.directoryHandle.getFileHandle(name, { create: true });
 					let writableHandle = await fileHandle.createWritable();
@@ -212,15 +214,15 @@ export default {
 		async finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
 				// If we are printing a single sheet, don't add _index to the names
-				let sheetName = `${options.modelName}${options.sheet}.png`;
+				let sheetName = `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`;
 				if(options.sheet === 0) {
-					sheetName = `${options.modelName}.png`;
+					sheetName = `${options.modelName}.${this.recordParams.imageFormat}`;
 
 					Object.values(options.json).forEach(animationJSON => {
-						animationJSON.sheet = animationJSON.sheet.replace('0.png', '.png');
+						animationJSON.sheet = animationJSON.sheet.replace(`0.${this.recordParams.imageFormat}`, `.${this.recordParams.imageFormat}`);
 					});
 					options.atlasTextures.forEach(atlasTexture => {
-						atlasTexture.image = atlasTexture.image.replace('0.png', '.png');
+						atlasTexture.image = atlasTexture.image.replace(`0.${this.recordParams.imageFormat}`, `.${this.recordParams.imageFormat}`);
 					});
 				}
 
@@ -341,7 +343,7 @@ export default {
 
 				if(options.atlasTextures.length <= options.sheet) {
 					options.atlasTextures.push({
-						image: `${options.modelName}${options.sheet}.png`,
+						image: `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`,
 						frames: []		
 					});
 				}
@@ -384,7 +386,7 @@ export default {
 			
 			if(!options.json[animationName]) {
 				options.json[animationName] = {
-					sheet: `${options.modelName}${options.sheet}.png`,
+					sheet: `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`,
 					directions: {}
 				};
 			}
@@ -462,7 +464,9 @@ export default {
 			};
 		},
 		async saveImageToZip(options, sheetName) {
-			let imgDataUrl = options.canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
+			// Played with quality param for webp a bit and 80 appears to be the default and good enough
+			// Double quality webp at 80 is worse than double quality PNG, but not by much while being 1/10th the size
+			let imgDataUrl = options.canvas.toDataURL(`image/${this.recordParams.imageFormat}`).replace(`data:image/${this.recordParams.imageFormat};base64,`, '');
 			let outputData = imgDataUrl;
 
 			// TODO: This needs some sort of loading indicator - for now we just pause animation to make it a little more obvious something is happening
@@ -492,7 +496,7 @@ export default {
 			await options.saveFile(sheetName, outputData, { base64: true });
 		},
 		async startNewSheet(options) {
-			await this.saveImageToZip(options, `${options.modelName}${options.sheet}.png`);
+			await this.saveImageToZip(options, `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`);
 			this.resetSheetCanvas(options);
 			options.sheet++;
 		},
@@ -509,7 +513,7 @@ export default {
 			options.ctx = canvas.getContext('2d');
 		},
 		getPNGDataUrl() {
-			return this.renderer.domElement.toDataURL('image/png');
+			return this.renderer.domElement.toDataURL(`image/${this.recordParams.imageFormat}`);
 		},
 
 		onWindowResize() {
@@ -620,6 +624,10 @@ export default {
 			this.recordParams.shadowDistance = config.shadowDistance !== undefined ? config.shadowDistance : (this.recordParams.distance || 1);
 			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
 			this.recordParams.packTextures = config.packTextures !== undefined ? config.packTextures : false;
+			this.recordParams.imageFormat = config.imageFormat !== undefined ? config.imageFormat : DEFAULT_FORMAT;
+			if(this.recordParams.imageFormat !== 'png') {
+				this.recordParams.compressPNG = false;
+			}
 			if(config.ambientLightIntensity) {
 				this.ambientLight.intensity = config.ambientLightIntensity;
 			}
