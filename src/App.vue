@@ -22,6 +22,7 @@ import pngquant from '@/utils/pngquant';
 
 const DEFAULT_FRAME_SIZE = 256;
 const DEFAULT_ANGLES_COUNT = 16;
+const DEFAULT_FORMAT = 'png';
 export default {
 	data: () => {
 		return {
@@ -45,6 +46,7 @@ export default {
 				sheetSize: 4096,
 				distance: 1,
 				viewAngle: 0,
+				imageFormat: DEFAULT_FORMAT,
 				compressPNG: true,
 				shadows: true,
 				shadowHeightAngle: 0,
@@ -116,7 +118,7 @@ export default {
 				options.canvas.width = this.config.icon.size;
 				options.canvas.height = this.config.icon.size;
 				await this.drawFramesFromAnimation('icon', options);
-				await this.saveImageToZip(options, 'icon.png');
+				await this.saveImageToZip(options, `icon.${this.recordParams.imageFormat}`);
 			}
 
 			options.finishWriting();
@@ -180,7 +182,7 @@ export default {
 						else {
 							byteArray = contents;
 						}
-						contents = new Blob([byteArray], {type: 'image/png'});
+						contents = new Blob([byteArray], {type: `image/${this.recordParams.imageFormat}`});
 					}
 					let fileHandle = await this.directoryHandle.getFileHandle(name, { create: true });
 					let writableHandle = await fileHandle.createWritable();
@@ -212,15 +214,15 @@ export default {
 		async finishRecordings(options) {
 			if(options.column > 0 || options.row > 0) {
 				// If we are printing a single sheet, don't add _index to the names
-				let sheetName = `${options.modelName}${options.sheet}.png`;
+				let sheetName = `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`;
 				if(options.sheet === 0) {
-					sheetName = `${options.modelName}.png`;
+					sheetName = `${options.modelName}.${this.recordParams.imageFormat}`;
 
 					Object.values(options.json).forEach(animationJSON => {
-						animationJSON.sheet = animationJSON.sheet.replace('0.png', '.png');
+						animationJSON.sheet = animationJSON.sheet.replace(`0.${this.recordParams.imageFormat}`, `.${this.recordParams.imageFormat}`);
 					});
 					options.atlasTextures.forEach(atlasTexture => {
-						atlasTexture.image = atlasTexture.image.replace('0.png', '.png');
+						atlasTexture.image = atlasTexture.image.replace(`0.${this.recordParams.imageFormat}`, `.${this.recordParams.imageFormat}`);
 					});
 				}
 
@@ -341,7 +343,7 @@ export default {
 
 				if(options.atlasTextures.length <= options.sheet) {
 					options.atlasTextures.push({
-						image: `${options.modelName}${options.sheet}.png`,
+						image: `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`,
 						frames: []		
 					});
 				}
@@ -384,7 +386,7 @@ export default {
 			
 			if(!options.json[animationName]) {
 				options.json[animationName] = {
-					sheet: `${options.modelName}${options.sheet}.png`,
+					sheet: `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`,
 					directions: {}
 				};
 			}
@@ -462,7 +464,9 @@ export default {
 			};
 		},
 		async saveImageToZip(options, sheetName) {
-			let imgDataUrl = options.canvas.toDataURL('image/png').replace('data:image/png;base64,', '');
+			// Played with quality param for webp a bit and 80 appears to be the default and good enough
+			// Double quality webp at 80 is worse than double quality PNG, but not by much while being 1/10th the size
+			let imgDataUrl = options.canvas.toDataURL(`image/${this.recordParams.imageFormat}`).replace(`data:image/${this.recordParams.imageFormat};base64,`, '');
 			let outputData = imgDataUrl;
 
 			// TODO: This needs some sort of loading indicator - for now we just pause animation to make it a little more obvious something is happening
@@ -492,7 +496,7 @@ export default {
 			await options.saveFile(sheetName, outputData, { base64: true });
 		},
 		async startNewSheet(options) {
-			await this.saveImageToZip(options, `${options.modelName}${options.sheet}.png`);
+			await this.saveImageToZip(options, `${options.modelName}${options.sheet}.${this.recordParams.imageFormat}`);
 			this.resetSheetCanvas(options);
 			options.sheet++;
 		},
@@ -509,7 +513,7 @@ export default {
 			options.ctx = canvas.getContext('2d');
 		},
 		getPNGDataUrl() {
-			return this.renderer.domElement.toDataURL('image/png');
+			return this.renderer.domElement.toDataURL(`image/${this.recordParams.imageFormat}`);
 		},
 
 		onWindowResize() {
@@ -570,7 +574,10 @@ export default {
 			this.directionalLight.position.set(...angles.light);
 			this.directionalLight.castShadow = this.recordParams.shadow;
 
-			let startAngle = this.config.startAngle || 270;
+			let startAngle = this.config.startAngle;
+			if(startAngle === undefined) {
+				startAngle = 270;
+			}
 			let angle = angleName;
 			if(angles.startAngle) {
 				angle = angles.startAngle;
@@ -617,11 +624,26 @@ export default {
 			this.recordParams.shadowDistance = config.shadowDistance !== undefined ? config.shadowDistance : (this.recordParams.distance || 1);
 			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
 			this.recordParams.packTextures = config.packTextures !== undefined ? config.packTextures : false;
+			this.recordParams.imageFormat = config.imageFormat !== undefined ? config.imageFormat : DEFAULT_FORMAT;
+			if(this.recordParams.imageFormat !== 'png') {
+				this.recordParams.compressPNG = false;
+			}
+			if(config.ambientLightIntensity) {
+				this.ambientLight.intensity = config.ambientLightIntensity;
+			}
 			if(config.directionalLightIntensity) {
 				this.directionalLight.intensity = config.directionalLightIntensity;
 			}
+			if(config.hemisphereLightIntensity) {
+				this.hemisphereLight.intensity = config.hemisphereLightIntensity;
+			}
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
+			if(config.material) {
+				for(let type in config.material) {
+					filenames.push(config.material[type]);
+				}
+			}
 			if(files) {
 				let usedFiles = files.filter(file => {
 					return filenames.includes(file.name);
@@ -683,20 +705,28 @@ export default {
 			const manager = new LoadingManager();
 			manager.addHandler( /\.tga$/i, new TGALoader(manager) );
 			const fbxLoader = new FBXLoader(manager);
+			let textureLoader = new THREE.TextureLoader(manager);
 
 			let modelBlobSet = blobs.find(({name}) => name.toLowerCase().includes('.fbx') && !name.includes('@'));
 			let modelBlob = modelBlobSet.blob;
 			let modelName = modelBlobSet.name;
-			modelBlob = await this.fixModelData(modelBlob);
-			let textureBlob = blobs.find(({name}) => name.includes('.tga')).blob;
+
+			let textureBlobs = blobs.filter(({name}) => name.toLowerCase().includes('.tga') || name.toLowerCase().includes('.png'));
+			if(textureBlobs.length) {
+				let textureBlobExtension = textureBlobs[0].name.split('.').at(-1);
+				modelBlob = await this.fixModelData(modelBlob, textureBlobExtension);
+			}
+
+			let textureBlob = textureBlobs.length ? textureBlobs[0].blob : null;
 			manager.setURLModifier((url) => {
-				let matchingBlob = blobs.find(({name}) => name.includes(url));
+				let matchingBlob = blobs.find(({name}) => name.toLowerCase().includes(url.toLowerCase().replace('./', '')));
+				// console.log(`loading ${url.toLowerCase().replace('./', '')} - ${matchingBlob ? matchingBlob.name : null}`);
 
 				if(modelName.includes(url)) {
 					return URL.createObjectURL(modelBlob);
 				} else if(matchingBlob) {
 					return URL.createObjectURL(matchingBlob.blob);
-				} else if(url.includes('.tga') && textureBlob) {
+				} else if((url.toLowerCase().includes('.tga') || url.toLowerCase().includes('.png')) && textureBlob) {
 					return URL.createObjectURL(textureBlob);
 				} else {
 					return url;
@@ -704,7 +734,27 @@ export default {
 			});
 
 			let model = this.currentModel = await fbxLoadPromise(fbxLoader, modelName);
-			model.scale.set(0.01, 0.01, 0.01);
+			if(this.config.material) {
+				let modelMesh = model;
+				if(modelMesh.constructor.name == 'Group') {
+					modelMesh = modelMesh.children[0];
+				}
+
+				for(let prop in this.config.material) {
+					let value = this.config.material[prop];
+					if(prop.toLowerCase().includes('map')) {
+						let texture = await fbxLoadPromise(textureLoader, value);
+						modelMesh.material[prop] = texture;
+					} else {
+						if(typeof value === 'string' && value.includes('rgb(')) {
+							modelMesh.material[prop] = new THREE.Color(value);
+						} else {
+							modelMesh.material[prop] = value;
+						}
+					}
+				}
+			}
+			model.scale.set(0.01 * (this.config.modelScaleX || 1), 0.01 * (this.config.modelScaleY || 1), 0.01 * (this.config.modelScaleZ || 1));
 
 			model.traverse(it => {
 				if(it.isMesh) {
@@ -864,17 +914,23 @@ export default {
 
 			return meshes;
 		},
-		async fixModelData(startBlob) {
+		async fixModelData(startBlob, textureBlobExtension) {
 			let arrayBuffer = await startBlob.arrayBuffer();
 			let modelArray = new Uint8Array(arrayBuffer);
 
+			this.replaceLetters(modelArray, '.psd', '.' + textureBlobExtension.toLowerCase());
+			this.replaceLetters(modelArray, '.jpg', '.' + textureBlobExtension.toLowerCase());
+
+			return new Blob([arrayBuffer]);
+		},
+		replaceLetters(modelArray, search, replace) {
 			let matchCount = 0;
-			const psdSearchCodes = ['.', 'p', 's', 'd'].map(char => char.charCodeAt(0));
-			const tgaReplaceCodes = ['.', 't', 'g', 'a'].map(char => char.charCodeAt(0));
+			const searchCodes = search.split('').map(char => char.charCodeAt(0));
+			const replaceCodes = replace.split('').map(char => char.charCodeAt(0));
 			for(let i = 0; i < modelArray.length; i++) {
 				let matches = true;
-				for(let j = 0; j < psdSearchCodes.length; j++) {
-					if(modelArray[i + j] !== psdSearchCodes[j]) {
+				for(let j = 0; j < searchCodes.length; j++) {
+					if(modelArray[i + j] !== searchCodes[j]) {
 						matches = false;
 						break;
 					}
@@ -883,16 +939,14 @@ export default {
 				if(matches) {
 					matchCount++;
 
-					for(let j = 0; j < psdSearchCodes.length; j++) {
-						modelArray[i + j] = tgaReplaceCodes[j];
+					for(let j = 0; j < searchCodes.length; j++) {
+						modelArray[i + j] = replaceCodes[j];
 					}
 				}
 			}
 			if(matchCount > 0) {
-				console.warn(`Fixed: replaced .psd with .tga ${matchCount} times`);
+				console.warn(`Fixed: replaced ${search} with ${replace} ${matchCount} times`);
 			}
-
-			return new Blob([arrayBuffer]);
 		},
 		async droppedFiles(event) {
 			let files = await loadDroppedFiles(event);
@@ -901,9 +955,8 @@ export default {
 		},
 		loadConfigFromFiles(files) {
 			let modelFile = files.find(file => file.name.toLowerCase().includes('.fbx') && !file.name.includes('@'));
-			let textureFile = files.find(file => file.name.toLowerCase().includes('.tga'));
-			if(!modelFile || !textureFile) {
-				alert('You need to upload at least a fbx and a texture file');
+			if(!modelFile) {
+				alert('You need to upload at least a fbx file');
 				return;
 			}
 
@@ -941,7 +994,7 @@ export default {
 
 				if(handle instanceof window.FileSystemDirectoryHandle) {
 					await this.addFilesFromFolder(handle, files);
-				} else if(key === 'config.json' || key.includes('fbx') || key.includes('tga')) {
+				} else if(key === 'config.json' || key.includes('.fbx') || key.includes('.tga') || key.includes('.png')) {
 					let file = await handle.getFile();
 					files.push(file);
 				}
@@ -955,6 +1008,7 @@ export default {
 		const light1  = new THREE.AmbientLight(0xFFFFFF, 0.3);
 		light1.name = 'ambient_light';
 		scene.add(light1);
+		this.ambientLight = light1;
 
 		const light2  = new THREE.DirectionalLight(0xFFFFFF, 0.8 * Math.PI);
 		light2.name = 'main_light';
@@ -972,7 +1026,7 @@ export default {
 		scene.add(light2);
 		this.directionalLight = light2;
 
-		const hemiLight = new THREE.HemisphereLight();
+		const hemiLight = this.hemisphereLight = new THREE.HemisphereLight();
 		hemiLight.name = 'hemi_light';
 		scene.add(hemiLight);
 

@@ -24,6 +24,9 @@ export default function generateAngles(modelDimensions, config, recordParams) {
 			...config.icon.camera
 		};
 	}
+	if(config && config.icon && config.icon.startAngle !== undefined) {
+		iconParams.startAngle = config.icon.startAngle;
+	}
 
 	return {
 		spritesheet: {
