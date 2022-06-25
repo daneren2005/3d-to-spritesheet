@@ -51,6 +51,10 @@ The view angle defaults to 60 degrees, and can be configured with `"viewAngle": 
 | frameSize 		| 256 				| How many pixels each frame takes up. The default of 256 / 4096 allows for 256 frames per sheet.  128 seems to be the sweet spot for good enough small file sizes.  256 looks pretty good but is significantly larger than 128.  YMMV depending on how close your camera is to the units. |
 | directionalLightIntensity | 2.51		| How bright the directional light is |
 | hemisphereLightIntensity | 1			| How bright the hemisphere light is |
+| modelScaleX		| 1 				| X scale to apply to model |
+| modelScaleY		| 1 				| Y scale to apply to model |
+| modelScaleZ		| 1 				| Z scale to apply to model |
+| imageFormat		| png				| png or webp
 | sheetSize 		| 4096 				| The total size of each sprite sheet. Different devices have different limitations on the size of a single texture. |
 | shadow 			| true 				| Whether to render with shadow |
 | shadowHeightAngle | 90 				| The angle above the model that the light is casting a shadow from |

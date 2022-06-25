@@ -754,7 +754,7 @@ export default {
 					}
 				}
 			}
-			model.scale.set(0.01, 0.01, 0.01);
+			model.scale.set(0.01 * (this.config.modelScaleX || 1), 0.01 * (this.config.modelScaleY || 1), 0.01 * (this.config.modelScaleZ || 1));
 
 			model.traverse(it => {
 				if(it.isMesh) {
