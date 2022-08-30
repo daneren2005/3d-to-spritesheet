@@ -18,8 +18,8 @@ import axios from 'axios';
 import defaultConfig from '../public/models/ToonRTS_demo_Knight/config.json';
 import loadDroppedFiles from '@/utils/load-dropped-files';
 import generateAngles, { angleToRadians } from '@/utils/generate-angles';
-import pngquant from '@/utils/pngquant';
 
+let pngquantModule, avifModule;
 const DEFAULT_FRAME_SIZE = 256;
 const DEFAULT_ANGLES_COUNT = 16;
 const DEFAULT_FORMAT = 'png';
@@ -464,9 +464,16 @@ export default {
 			};
 		},
 		async saveImageToZip(options, sheetName) {
-			// Played with quality param for webp a bit and 80 appears to be the default and good enough
-			// Double quality webp at 80 is worse than double quality PNG, but not by much while being 1/10th the size
-			let imgDataUrl = options.canvas.toDataURL(`image/${this.recordParams.imageFormat}`).replace(`data:image/${this.recordParams.imageFormat};base64,`, '');
+			// I previously thought the default webp quality of 0.8 would be good enough, but in practice I saw artifacts that weren't present at 0.9
+			let quality = 1;
+			if(this.recordParams.imageFormat === 'webp') {
+				quality = 0.90;
+			}
+			let imageFormat = this.recordParams.imageFormat;
+			if(imageFormat === 'avif') {
+				imageFormat = 'png';
+			}
+			let imgDataUrl = options.canvas.toDataURL(`image/${imageFormat}`, quality).replace(`data:image/${imageFormat};base64,`, '');
 			let outputData = imgDataUrl;
 
 			// TODO: This needs some sort of loading indicator - for now we just pause animation to make it a little more obvious something is happening
@@ -478,6 +485,11 @@ export default {
 					inputByteArray[i] = binaryString.charCodeAt(i);
 				}
 
+				if(!pngquantModule) {
+					pngquantModule = await import(/* webpackChunkName: "pgquant" */ '@/utils/pngquant');
+				}
+				const pngquant = pngquantModule.default;
+
 				try {
 					let outputByteArray = await pngquant(inputByteArray, {
 						quality: '10-100',
@@ -487,6 +499,50 @@ export default {
 					outputData = outputByteArray;
 				} catch(e) {
 					alert(`Failed to run pngquant on image ${sheetName}`);
+					throw e;
+				} finally {
+					this.isRecording = false;
+				}
+			} else if(this.recordParams.imageFormat === 'avif') {
+				this.isRecording = true;
+
+				if(!avifModule) {
+					avifModule = await import(/* webpackChunkName: "avif" */ '@jsquash/avif');
+				}
+				let encode = avifModule.encode;
+
+				try {
+					let rawImageData = options.ctx.getImageData(0, 0, options.canvas.width, options.canvas.height);
+					// https://github.com/jamsinclair/jSquash/blob/main/packages/avif/meta.ts
+					// https://github.com/GoogleChromeLabs/squoosh/blob/dev/codecs/avif/enc/avif_enc.cpp
+					// Comparing with Sharp's options: https://sharp.pixelplumbing.com/api-output#avif
+					// PNG - 1.01 MB
+					// Default - 726 KB - 45 seconds
+					// Speed 4 - 576 KB - 160 seconds
+					// Speed 3 - 498 KB - 255 seconds
+					// Speed 2 - 496 KB - 369 seconds
+					// cqLevel 0 - 2.24 MB - 31 seconds
+					// cqLevel 10 speed 4 - 978 KB - 150 seconds
+					// cqLevel 20 - 1.08 MB - 40 seconds
+					// cqLevel 20 speed 4 - 724 KB - 162 seconds
+					// cqLevel 20 speed 4 denoise 40 - 674 KB - 169 seconds
+					// Denoise 10 - 720 KB - 54 seconds
+					// Denoise 40 - 672 KB  - 55 seconds
+					// Subsample 4 - 671 KB - 38 seconds
+					// Subsample 1 - 726 KB - 45 seconds
+					// Sharp (webpack-image-resize-loader defaults) - 338 KB
+					// console.time('avif');
+					outputData = await encode(rawImageData, {
+						cqLevel: 10,
+						speed: 4
+						// Denoise 0 seems to be the best quality
+						// denoiseLevel: 40,
+						// Subsample 4 is black and white - probably leave at 0
+						// subsample: 1
+					});
+					// console.timeEnd('avif');
+				} catch(e) {
+					alert(`Failed to convert image to avif ${sheetName}`);
 					throw e;
 				} finally {
 					this.isRecording = false;
@@ -511,9 +567,6 @@ export default {
 			canvas.height = this.recordParams.sheetSize;
 			options.canvas = canvas;
 			options.ctx = canvas.getContext('2d');
-		},
-		getPNGDataUrl() {
-			return this.renderer.domElement.toDataURL(`image/${this.recordParams.imageFormat}`);
 		},
 
 		onWindowResize() {
@@ -875,9 +928,11 @@ export default {
 				let animationObject = await fbxLoadPromise(fbxLoader, name);
 				this.addAnimationFromAction(animationObject.animations[0], animationName);
 			}
-			model.animations.forEach(animation => {
-				this.addAnimationFromAction(animation);
-			});
+			if(animationBlobs.length === 0) {
+				model.animations.forEach(animation => {
+					this.addAnimationFromAction(animation);
+				});
+			}
 			if(!Object.values(this.animationActions).length) {
 				this.addAnimationToFolders('static', null);
 				this.animationActions.static = {
