@@ -18,6 +18,7 @@ import axios from 'axios';
 import defaultConfig from '../public/models/ToonRTS_demo_Knight/config.json';
 import loadDroppedFiles from '@/utils/load-dropped-files';
 import generateAngles, { angleToRadians } from '@/utils/generate-angles';
+import generateColorizedSpritesheet from '@/utils/generate-colorized-spritesheet';
 
 let pngquantModule, avifModule;
 const DEFAULT_FRAME_SIZE = 256;
@@ -53,7 +54,8 @@ export default {
 				shadowSideAngle: 0,
 				shadowDistance: 0,
 				shadowOpacity: 0,
-				packTextures: true
+				packTextures: true,
+				colorize: false
 			},
 			angles: null,
 			angleNames: null,
@@ -464,6 +466,10 @@ export default {
 			};
 		},
 		async saveImageToZip(options, sheetName) {
+			if(this.recordParams.colorize) {
+				generateColorizedSpritesheet(options.canvas, options.ctx, this.recordParams.colorize.base);
+			}
+
 			// I previously thought the default webp quality of 0.8 would be good enough, but in practice I saw artifacts that weren't present at 0.9
 			let quality = 1;
 			if(this.recordParams.imageFormat === 'webp') {
@@ -678,6 +684,7 @@ export default {
 			this.recordParams.shadowOpacity = config.shadowOpacity !== undefined ? config.shadowOpacity : (0.6);
 			this.recordParams.packTextures = config.packTextures !== undefined ? config.packTextures : false;
 			this.recordParams.imageFormat = config.imageFormat !== undefined ? config.imageFormat : DEFAULT_FORMAT;
+			this.recordParams.colorize = config.colorize !== undefined ? config.colorize : false;
 			if(this.recordParams.imageFormat !== 'png') {
 				this.recordParams.compressPNG = false;
 			}
