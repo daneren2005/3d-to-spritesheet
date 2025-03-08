@@ -806,7 +806,7 @@ export default {
 						let texture = await fbxLoadPromise(textureLoader, value);
 						modelMesh.material[prop] = texture;
 					} else {
-						if(typeof value === 'string' && value.includes('rgb(')) {
+						if((typeof value === 'string' && value.includes('rgb(')) || prop === 'color') {
 							modelMesh.material[prop] = new THREE.Color(value);
 						} else {
 							modelMesh.material[prop] = value;
