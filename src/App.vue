@@ -24,6 +24,9 @@ let pngquantModule, avifModule;
 const DEFAULT_FRAME_SIZE = 256;
 const DEFAULT_ANGLES_COUNT = 16;
 const DEFAULT_FORMAT = 'png';
+// Rendering at higher resolution than we save seems to give good results up to a point
+// After a certain point we just end up with jagged edges that weren't in the original (maybe from pngquant?)
+const RESOLUTION_INCREASE = 2;
 export default {
 	data: () => {
 		return {
@@ -383,7 +386,7 @@ export default {
 					}
 				}
 
-				options.ctx.drawImage(this.renderer.domElement, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize);
+				options.ctx.drawImage(this.renderer.domElement, 0, 0, this.recordParams.frameSize * RESOLUTION_INCREASE, this.recordParams.frameSize * RESOLUTION_INCREASE, options.column * this.recordParams.frameSize, options.row * this.recordParams.frameSize, this.recordParams.frameSize, this.recordParams.frameSize);
 			}
 			
 			if(!options.json[animationName]) {
@@ -577,7 +580,7 @@ export default {
 
 		onWindowResize() {
 			let size = Math.min(window.innerWidth, window.innerHeight);
-			let scale = size / this.recordParams.frameSize;
+			let scale = size / (this.recordParams.frameSize * RESOLUTION_INCREASE);
 
 			this.renderer.domElement.style.transform = `scale(${scale})`;
 		},
@@ -661,7 +664,7 @@ export default {
 			}
 
 			this.recordParams.frameSize = size;
-			this.renderer.setSize(size, size);
+			this.renderer.setSize(size * RESOLUTION_INCREASE, size * RESOLUTION_INCREASE);
 			this.onWindowResize();
 
 			this.lastRenderSize = size;
@@ -940,6 +943,16 @@ export default {
 					this.addAnimationFromAction(animation);
 				});
 			}
+
+			// Resort the animations to be in the same order we defined them instead of whatever order the files loaded in
+			const sortedActions = {};
+			Object.keys(this.config.animations).forEach(animationName => {
+				if(this.animationActions[animationName]) {
+					sortedActions[animationName] = this.animationActions[animationName];
+				}
+			});
+			this.animationActions = sortedActions;
+
 			if(!Object.values(this.animationActions).length) {
 				this.addAnimationToFolders('static', null);
 				this.animationActions.static = {
