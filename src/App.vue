@@ -15,7 +15,6 @@ import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import axios from 'axios';
-import defaultConfig from '../public/models/ToonRTS_demo_Knight/config.json';
 import loadDroppedFiles from '@/utils/load-dropped-files';
 import generateAngles, { angleToRadians } from '@/utils/generate-angles';
 import generateColorizedSpritesheet from '@/utils/generate-colorized-spritesheet';
@@ -401,12 +400,7 @@ export default {
 			options.json[animationName].directions[angle].push(options.row * maxSize + options.column);
 			// Still record the flipped side
 			if(angle != 90 && angle != 270) {
-				let altAngle = null;
-				if(angle < 90) {
-					altAngle = 180 - angle;
-				} else {
-					altAngle = (360 - angle) + 180;
-				}
+				let altAngle = angle < 90 ? 180 - angle : (360 - angle) + 180;
 
 				if(!options.json[animationName].directions[altAngle]) {
 					options.json[animationName].directions[altAngle] = [];
@@ -495,7 +489,7 @@ export default {
 				}
 
 				if(!pngquantModule) {
-					pngquantModule = await import(/* webpackChunkName: "pgquant" */ '@/utils/pngquant');
+					pngquantModule = await import('@/utils/pngquant');
 				}
 				const pngquant = pngquantModule.default;
 
@@ -516,7 +510,7 @@ export default {
 				this.isRecording = true;
 
 				if(!avifModule) {
-					avifModule = await import(/* webpackChunkName: "avif" */ '@jsquash/avif');
+					avifModule = await import('@jsquash/avif');
 				}
 				let encode = avifModule.encode;
 
@@ -1130,7 +1124,9 @@ export default {
 		// controls.autoRotate = true;
 		controls.target.set(0, 0, 0);
 
-		this.loadModelFromConfig(defaultConfig);
+		axios.get(`${import.meta.env.BASE_URL}models/ToonRTS_demo_Knight/config.json`).then(({ data }) => {
+			this.loadModelFromConfig(data);
+		});
 
 		window.addEventListener('resize', this.onWindowResize, false);
 		this.onWindowResize();
@@ -1244,8 +1240,11 @@ export default {
 
 		animate();
 	},
-	destroyed() {
-		this.gui.destroy();
+	beforeUnmount() {
+		window.removeEventListener('resize', this.onWindowResize, false);
+		if(this.gui) {
+			this.gui.destroy();
+		}
 	}
 };
 
