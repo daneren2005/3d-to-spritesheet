@@ -66,9 +66,9 @@ export default function generateColorizedSpritesheet(canvas, context, defaultPal
 
 				let colorIndex = PALLET_INDEX - Math.round((hue - MIN_BLUE_HUE) / (MAX_BLUE_HUE - MIN_BLUE_HUE) * PALLET_INDEX);
 				let newColor = pallete[colorIndex];
-				pixelArray[--index] = newColor.b;
-				pixelArray[--index] = newColor.g;
-				pixelArray[--index] = newColor.r;
+				pixelArray[index - 1] = newColor.b;
+				pixelArray[index - 2] = newColor.g;
+				pixelArray[index - 3] = newColor.r;
 			}
 		}
 		else if(defaultPallete === 'red-hue') {
@@ -84,15 +84,15 @@ export default function generateColorizedSpritesheet(canvas, context, defaultPal
 			if(hue >= MIN_RED_HUE1 && hue < MAX_RED_HUE1) {
 				let colorIndex = PALLET_INDEX - Math.round((hue - -20) / (MAX_RED_HUE1 - -20) * PALLET_INDEX);
 				let newColor = pallete[colorIndex];
-				pixelArray[--index] = newColor.b;
-				pixelArray[--index] = newColor.g;
-				pixelArray[--index] = newColor.r;
+				pixelArray[index - 1] = newColor.b;
+				pixelArray[index - 2] = newColor.g;
+				pixelArray[index - 3] = newColor.r;
 			} else if(hue > MIN_RED_HUE2 && hue <= MAX_RED_HUE2) {
 				let colorIndex = PALLET_INDEX - Math.round((hue - MIN_RED_HUE2) / (380 - MIN_RED_HUE2) * PALLET_INDEX);
 				let newColor = pallete[colorIndex];
-				pixelArray[--index] = newColor.b;
-				pixelArray[--index] = newColor.g;
-				pixelArray[--index] = newColor.r;
+				pixelArray[index - 1] = newColor.b;
+				pixelArray[index - 2] = newColor.g;
+				pixelArray[index - 3] = newColor.r;
 			}
 		}
 	}

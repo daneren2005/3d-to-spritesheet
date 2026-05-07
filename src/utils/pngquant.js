@@ -2,14 +2,12 @@
 
 let waitingResolve = null;
 let waitingReject = null;
-let worker = new Worker("pngquant/worker.js");
+let worker = new Worker(`${import.meta.env.BASE_URL}pngquant/worker.js`);
 worker.onmessage = (event) => {
 	let message = event.data;
 	if(message.type === 'start') {
-		// eslint-disable-next-line
 		console.log('worker started');
 	} else if(message.type === 'stdout') {
-		// eslint-disable-next-line
 		console.log(`Worker message: ${message.data}`);
 	} else if(message.type === 'done') {
 		let buffers = message.data;
