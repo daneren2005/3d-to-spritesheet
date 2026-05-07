@@ -11,7 +11,7 @@ import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader';
 import { LoadingManager } from 'three/src/loaders/LoadingManager';
 import { TGALoader } from 'three/examples/jsm/loaders/TGALoader';
 import Stats from 'three/examples/jsm/libs/stats.module';
-import { GUI } from 'three/examples/jsm/libs/dat.gui.module';
+import { GUI } from 'three/examples/jsm/libs/lil-gui.module.min';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import axios from 'axios';
@@ -23,6 +23,7 @@ let pngquantModule, avifModule;
 const DEFAULT_FRAME_SIZE = 256;
 const DEFAULT_ANGLES_COUNT = 16;
 const DEFAULT_FORMAT = 'png';
+const LEGACY_LIGHT_INTENSITY_MULTIPLIER = 6;
 // Rendering at higher resolution than we save seems to give good results up to a point
 // After a certain point we just end up with jagged edges that weren't in the original (maybe from pngquant?)
 const RESOLUTION_INCREASE = 2;
@@ -51,7 +52,7 @@ export default {
 				viewAngle: 0,
 				imageFormat: DEFAULT_FORMAT,
 				compressPNG: true,
-				shadows: true,
+				shadow: true,
 				shadowHeightAngle: 0,
 				shadowSideAngle: 0,
 				shadowDistance: 0,
@@ -62,6 +63,11 @@ export default {
 			angles: null,
 			angleNames: null,
 			anglesFolder: null,
+			lightParams: {
+				ambient: 0.3,
+				directional: 0.8 * Math.PI,
+				hemisphere: 1
+			},
 			isRecording: false,
 			directoryHandle: null
 		};
@@ -92,6 +98,7 @@ export default {
 		},
 
 		async recordAllAsSheets(name) {
+			const startAngleName = this.currentAngleName;
 			let angleNames = this.angleNames;
 			let animationNames = Object.keys(this.animationActions);
 			const maxSize = this.recordParams.sheetSize / this.recordParams.frameSize;
@@ -126,13 +133,20 @@ export default {
 			}
 
 			options.finishWriting();
+			if(startAngleName) {
+				this.updateAngle(startAngleName);
+			}
 		},
 		async recordAnimationAsSheet(name) {
+			const startAngleName = this.currentAngleName;
 			let options = this.initRecordings(name);
 			await this.drawFramesFromAnimation(name, options);
 			await this.finishRecordings(options);
 
 			options.finishWriting();
+			if(startAngleName) {
+				this.updateAngle(startAngleName);
+			}
 		},
 
 		
@@ -142,13 +156,13 @@ export default {
 			if(modelName === 'icon') {
 				canvas.width = this.config.icon.size;
 				canvas.height = this.config.icon.size;
-				this.setRenderSize(this.config.icon.size);
+				this.setRenderSize(this.config.icon.size, RESOLUTION_INCREASE);
 			} else {
 				canvas.width = this.recordParams.sheetSize;
 				canvas.height = this.recordParams.sheetSize;
 
 				let size = this.config.frameSize || DEFAULT_FRAME_SIZE;
-				this.setRenderSize(size);
+				this.setRenderSize(size, RESOLUTION_INCREASE);
 			}
 			let ctx = canvas.getContext('2d');
 
@@ -574,7 +588,8 @@ export default {
 
 		onWindowResize() {
 			let size = Math.min(window.innerWidth, window.innerHeight);
-			let scale = size / (this.recordParams.frameSize * RESOLUTION_INCREASE);
+			let resolutionMultiplier = this.lastResolutionMultiplier || 1;
+			let scale = size / (this.recordParams.frameSize * resolutionMultiplier);
 
 			this.renderer.domElement.style.transform = `scale(${scale})`;
 		},
@@ -623,6 +638,64 @@ export default {
 				animationConfig
 			};
 		},
+		clearFolderControllers(folder, keepCount = 0) {
+			while(folder.controllers.length > keepCount) {
+				folder.controllers.at(-1).destroy();
+			}
+		},
+		getModelDimensions(model) {
+			const box = new THREE.Box3().makeEmpty();
+
+			model.updateWorldMatrix(true, true);
+			model.traverse((child) => {
+				if(!child.isMesh || !child.geometry) {
+					return;
+				}
+
+				if(!child.geometry.boundingBox) {
+					child.geometry.computeBoundingBox();
+				}
+
+				if(child.geometry.boundingBox) {
+					box.union(child.geometry.boundingBox.clone().applyMatrix4(child.matrixWorld));
+				}
+			});
+
+			if(box.isEmpty()) {
+				box.setFromObject(model, true);
+			}
+
+			return {
+				x: box.max.x - box.min.x,
+				y: box.max.y - box.min.y,
+				z: box.max.z - box.min.z
+			};
+		},
+		applyMaterialLighting(material) {
+			if(!material) {
+				return;
+			}
+
+			if(Array.isArray(material)) {
+				material.forEach((entry) => {
+					this.applyMaterialLighting(entry);
+				});
+				return;
+			}
+
+			material.needsUpdate = true;
+		},
+		syncLightIntensities() {
+			if(this.ambientLight) {
+				this.ambientLight.intensity = this.lightParams.ambient * LEGACY_LIGHT_INTENSITY_MULTIPLIER;
+			}
+			if(this.directionalLight) {
+				this.directionalLight.intensity = this.lightParams.directional * LEGACY_LIGHT_INTENSITY_MULTIPLIER;
+			}
+			if(this.hemisphereLight) {
+				this.hemisphereLight.intensity = this.lightParams.hemisphere * LEGACY_LIGHT_INTENSITY_MULTIPLIER;
+			}
+		},
 		updateAngle(angleName) {
 			let angles = this.angles[angleName] || this.angles.spritesheet;
 			this.camera.position.set(...angles.position);
@@ -652,16 +725,17 @@ export default {
 				}
 			}
 		},
-		setRenderSize(size) {
-			if(this.lastRenderSize == size) {
+		setRenderSize(size, resolutionMultiplier = 1) {
+			if(this.lastRenderSize == size && this.lastResolutionMultiplier == resolutionMultiplier) {
 				return;
 			}
 
 			this.recordParams.frameSize = size;
-			this.renderer.setSize(size * RESOLUTION_INCREASE, size * RESOLUTION_INCREASE);
+			this.renderer.setSize(size * resolutionMultiplier, size * resolutionMultiplier);
 			this.onWindowResize();
 
 			this.lastRenderSize = size;
+			this.lastResolutionMultiplier = resolutionMultiplier;
 		},
 
 		loadModelFromConfig(config, files = null) {
@@ -685,15 +759,16 @@ export default {
 			if(this.recordParams.imageFormat !== 'png') {
 				this.recordParams.compressPNG = false;
 			}
-			if(config.ambientLightIntensity) {
-				this.ambientLight.intensity = config.ambientLightIntensity;
+			if(config.ambientLightIntensity !== undefined) {
+				this.lightParams.ambient = config.ambientLightIntensity;
 			}
-			if(config.directionalLightIntensity) {
-				this.directionalLight.intensity = config.directionalLightIntensity;
+			if(config.directionalLightIntensity !== undefined) {
+				this.lightParams.directional = config.directionalLightIntensity;
 			}
-			if(config.hemisphereLightIntensity) {
-				this.hemisphereLight.intensity = config.hemisphereLightIntensity;
+			if(config.hemisphereLightIntensity !== undefined) {
+				this.lightParams.hemisphere = config.hemisphereLightIntensity;
 			}
+			this.syncLightIntensities();
 
 			let filenames = [config.model, config.texture, ...Object.values(config.animations).map(animation => animation.name)];
 			if(config.material) {
@@ -817,23 +892,17 @@ export default {
 				if(it.isMesh) {
 					it.receiveShadow = false;
 					it.castShadow = true;
+					this.applyMaterialLighting(it.material);
 				}
 			});
 			this.mixer = new THREE.AnimationMixer(model);
 
-			var box = new THREE.Box3().setFromObject(model);
-			this.modelDimensions = {
-				x: box.max.x - box.min.x,
-				y: box.max.y - box.min.y,
-				z: box.max.z - box.min.z
-			};
+			this.modelDimensions = this.getModelDimensions(model);
 			this.floorPlane.position.set(0, 0, 0);
 			this.angles = generateAngles(this.modelDimensions, this.config, this.recordParams);
 			this.updateAngle('270');
 
-			while(this.anglesFolder.__controllers.length) {
-				this.anglesFolder.remove(this.anglesFolder.__controllers[0]);
-			}
+			this.clearFolderControllers(this.anglesFolder);
 			let angleUpdater = {
 				icon: () => {
 					this.updateAngle('icon');
@@ -869,11 +938,10 @@ export default {
 
 			this.scene.add(model);
 			if(this.modelFolder) {
-				while(this.modelFolder.__controllers.length) {
-					this.modelFolder.remove(this.modelFolder.__controllers[0]);
-				}
+				this.clearFolderControllers(this.modelFolder);
 			} else {
 				this.modelFolder = this.gui.addFolder('Model');
+				this.modelFolder.close();
 			}
 			this.modelFolder.add(model.position, 'x', -4, 4).step(0.1).name('Position X').listen();
 			this.modelFolder.add(model.position, 'y', -4, 4).step(0.1).name('Position Y').listen();
@@ -893,11 +961,10 @@ export default {
 			});
 
 			if(this.meshPartsFolder) {
-				while(this.meshPartsFolder.__controllers.length) {
-					this.meshPartsFolder.remove(this.meshPartsFolder.__controllers[0]);
-				}
+				this.clearFolderControllers(this.meshPartsFolder);
 			} else {
 				this.meshPartsFolder = this.gui.addFolder('Mesh Parts');
+				this.meshPartsFolder.close();
 			}
 			let meshes = this.getMeshes(model);
 			meshes.sort((a, b) => a.name.localeCompare(b.name));
@@ -912,12 +979,8 @@ export default {
 				this.meshPartsFolder.add(mesh, 'visible').name(mesh.name);
 			});
 
-			while(this.animationsFolder.__controllers.length) {
-				this.animationsFolder.remove(this.animationsFolder.__controllers[0]);
-			}
-			while(this.actionsFolder.__controllers.length >= 3) {
-				this.actionsFolder.remove(this.actionsFolder.__controllers.at(-1));
-			}
+			this.clearFolderControllers(this.animationsFolder);
+			this.clearFolderControllers(this.actionsFolder, 2);
 
 			let animationBlobs = blobs.filter((blob) => {
 				return blob.name.includes('@') && blob.name.toLowerCase().includes('.fbx')
@@ -1098,6 +1161,7 @@ export default {
 		const hemiLight = this.hemisphereLight = new THREE.HemisphereLight();
 		hemiLight.name = 'hemi_light';
 		scene.add(hemiLight);
+		this.syncLightIntensities();
 
 		const camera = this.camera = new THREE.PerspectiveCamera(
 			75,
@@ -1113,7 +1177,7 @@ export default {
 			alpha: true
 		});
 		renderer.setSize(this.recordParams.frameSize, this.recordParams.frameSize);
-		renderer.gammaOutput = true;
+		renderer.outputColorSpace = THREE.SRGBColorSpace;
 		renderer.shadowMap.enabled = true;
 
 		this.$el.appendChild(renderer.domElement);
@@ -1136,7 +1200,7 @@ export default {
 
 		const gui = this.gui = new GUI();
 		this.animationsFolder = gui.addFolder('Animations');
-		// animationsFolder.open();
+		this.animationsFolder.close();
 
 		const cameraFolder = gui.addFolder('Camera');
 		cameraFolder.add(camera.position, 'x', -4, 4).name('Position x').step(0.01).listen();
@@ -1153,10 +1217,10 @@ export default {
 		cameraFolder.add(controls.target, 'x', -4, 4).name('Target x').step(0.01).listen();
 		cameraFolder.add(controls.target, 'y', -4, 4).name('Target y').step(0.01).listen();
 		cameraFolder.add(controls.target, 'z', -4, 4).name('Target z').step(0.01).listen();
-		// cameraFolder.open();
+		cameraFolder.close();
 
 		this.anglesFolder = gui.addFolder('Angles');
-		// this.anglesFolder.open();
+		this.anglesFolder.close();
 
 		this.actionsFolder = gui.addFolder('Actions');
 		this.actionsFolder.add({
@@ -1174,17 +1238,23 @@ export default {
 		this.frameSettingsFolder = this.gui.addFolder('Frames');
 		this.frameSettingsFolder.add(this.recordParams, 'frames', 1, 20).step(1).name('Frames').listen();
 		this.frameSettingsFolder.add(this.recordParams, 'frameSize', 32, 1024).step(32).name('Frame Size').listen().onChange((newValue) => {
-			renderer.setSize(newValue, newValue);
-			this.onWindowResize();
+			this.setRenderSize(newValue);
 		});
 		this.frameSettingsFolder.add(this.recordParams, 'sheetSize', 64, 16384).step(64).name('Sheet Size').listen();
 		this.frameSettingsFolder.add(this.recordParams, 'compressPNG').name('Compress PNG').listen();
 		this.frameSettingsFolder.add(this.recordParams, 'packTextures').name('Pack Textures').listen();
+		this.frameSettingsFolder.close();
 
 		const lightsFolder = gui.addFolder('Lights');
-		lightsFolder.add(light1, 'intensity', 0, 5).name('Ambient Light').step(0.01).listen();
-		lightsFolder.add(light2, 'intensity', 0, 5).name('Directional Light').step(0.01).listen();
-		lightsFolder.add(hemiLight, 'intensity', 0, 5).name('Hemisphere Light').step(0.01).listen();
+		lightsFolder.add(this.lightParams, 'ambient', 0, 5).name('Ambient Light').step(0.01).listen().onChange(() => {
+			this.syncLightIntensities();
+		});
+		lightsFolder.add(this.lightParams, 'directional', 0, 5).name('Directional Light').step(0.01).listen().onChange(() => {
+			this.syncLightIntensities();
+		});
+		lightsFolder.add(this.lightParams, 'hemisphere', 0, 5).name('Hemisphere Light').step(0.01).listen().onChange(() => {
+			this.syncLightIntensities();
+		});
 		lightsFolder.add(this.recordParams, 'shadow').name('Shadows').listen().onChange(() => {
 			this.updateAngle(this.currentAngleName);
 		});
@@ -1204,9 +1274,10 @@ export default {
 		lightsFolder.add(this.recordParams, 'shadowOpacity', 0.05, 1).step(0.05).name('Shadow Opacity').listen().onChange(() => {
 			this.updateAngle(this.currentAngleName);
 		});
+		lightsFolder.close();
 
 
-		let floorGeometry = new THREE.PlaneBufferGeometry(2000, 2000, 8, 8);
+		let floorGeometry = new THREE.PlaneGeometry(2000, 2000, 8, 8);
 		let floorMaterial = new THREE.ShadowMaterial({
 			opacity : 0.8
 		});
@@ -1218,15 +1289,18 @@ export default {
 		this.floorMaterial = floorMaterial;
 		scene.add(floorPlane);
 
-		const clock = new THREE.Clock();
+		const timer = new THREE.Timer();
+		timer.connect(document);
+		timer.update();
 
 		const animate = () => {
 			requestAnimationFrame(animate);
+			timer.update();
 
 			controls.update();
 
 			if(this.modelReady && !this.isRecording) {
-				this.mixer.update(clock.getDelta());
+				this.mixer.update(timer.getDelta());
 			}
 
 			render();
